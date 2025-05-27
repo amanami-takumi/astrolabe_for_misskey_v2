@@ -9,7 +9,6 @@ chmod -R 777 penetration
 
 
 git add . && git commit -m "
-- WebSocket接続の再接続処理に失敗した場合、手動での再起動を必要としていた問題を修正
-※毎日23時に接続処理を再試行する。
+誤って環境移行用のバックアップファイルがアップロードされてしまったため、それを削除
 " && git push -u origin development
 
