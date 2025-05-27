@@ -454,7 +454,9 @@ async function main() {
         schedule.scheduleJob({scheduleOptions, rule: '0 21 * * *'}, () => multi_feed('https://automaton-media.com/feed/'));
         schedule.scheduleJob({scheduleOptions, rule: '30 21 * * *'}, emoji_difference);
         schedule.scheduleJob({scheduleOptions, rule: '0 22 * * *'}, night_greeting);
-        
+        schedule.scheduleJob({scheduleOptions, rule: '0 23 * * *'}, async () => { await connectWebSocket_global(); });
+        schedule.scheduleJob({scheduleOptions, rule: '0 23 * * *'}, async () => { await connectWebSocket_main(); });
+        schedule.scheduleJob({scheduleOptions, rule: '0 23 * * *'}, async () => { await connectWebSocket_hybrid(); });
         // schedule.scheduleJob({scheduleOptions, rule: '20 23 * * *'}, () => test('test'));
         // python_connect_wordcloud('/generate/wordcloud')
         // 毎日3時にheatカウンターをリセット

@@ -15,11 +15,50 @@ let retryCount_hybrid = 0;
 let retryCount_global = 0;
 let retryCount_main = 0;
 
+// 現在のWebSocket接続を保持する変数を追加
+let currentWs_hybrid = null;
+let currentWs_global = null;
+let currentWs_main = null;
+
+// WebSocketを安全に切断するヘルパー関数
+async function safelyCloseWebSocket(ws) {
+    return new Promise((resolve) => {
+        if (!ws || ws.readyState === WebSocket.CLOSED) {
+            resolve();
+            return;
+        }
+
+        const onClose = () => {
+            ws.removeEventListener('close', onClose);
+            resolve();
+        };
+
+        ws.addEventListener('close', onClose);
+
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.close();
+        } else if (ws.readyState === WebSocket.CLOSING) {
+            // すでにクローズ中なので、closeイベントを待つだけ
+        } else {
+            // 接続中でもクローズ中でもない場合はすぐに解決
+            resolve();
+        }
+    });
+}
+
 function connectWebSocket_hybrid() {
     const wsHost = MISSKEY_URL.replace('https://', '');
     const wsUrl = `wss://${wsHost}/streaming?i=${MISSKEY_TOKEN}`;
     
+    // 既存の接続があれば切断
+    if (currentWs_hybrid && currentWs_hybrid.readyState !== WebSocket.CLOSED) {
+        safelyCloseWebSocket(currentWs_hybrid).then(() => {
+            console.log("既存のhybrid WebSocket接続を切断しました");
+        });
+    }
+    
     const ws = new WebSocket(wsUrl);
+    currentWs_hybrid = ws; // 新しい接続を保存
 
     ws.on('open', async () => {
         retryCount_hybrid = 0; // 接続成功時にリセット
@@ -65,6 +104,11 @@ function connectWebSocket_hybrid() {
     });
 
     ws.on('close', async () => {
+        // 現在のインスタンスが自分自身であることを確認
+        if (currentWs_hybrid === ws) {
+            currentWs_hybrid = null;
+        }
+        
         const retryDelay = retryCount_hybrid >= 12 ? 3600000 : 5000; // 12回以上は1時間待機
         await writeLog('info', 'connectWebSocket_hybrid', 
             `WebSocket接続が閉じられました。${retryDelay/1000}秒後に再接続を試みます。(試行回数: ${retryCount_hybrid + 1})`, 
@@ -84,7 +128,15 @@ function connectWebSocket_global() {
     const wsHost = MISSKEY_URL.replace('https://', '');
     const wsUrl = `wss://${wsHost}/streaming?i=${MISSKEY_TOKEN}`;
     
+    // 既存の接続があれば切断
+    if (currentWs_global && currentWs_global.readyState !== WebSocket.CLOSED) {
+        safelyCloseWebSocket(currentWs_global).then(() => {
+            console.log("既存のglobal WebSocket接続を切断しました");
+        });
+    }
+    
     const ws = new WebSocket(wsUrl);
+    currentWs_global = ws; // 新しい接続を保存
 
     ws.on('open', async () => {
         retryCount_global = 0; // 接続成功時にリセット
@@ -128,6 +180,11 @@ function connectWebSocket_global() {
     });
 
     ws.on('close', async () => {
+        // 現在のインスタンスが自分自身であることを確認
+        if (currentWs_global === ws) {
+            currentWs_global = null;
+        }
+        
         const retryDelay = retryCount_global >= 12 ? 3600000 : 5000; // 12回以上は1時間待機
         await writeLog('info', 'connectWebSocket_global', 
             `WebSocket接続が閉じられました。${retryDelay/1000}秒後に再接続を試みます。(試行回数: ${retryCount_global + 1})`, 
@@ -136,20 +193,26 @@ function connectWebSocket_global() {
         setTimeout(() => {
             console.log('WebSocket再接続を試みます...');
             retryCount_global++;
-            connectWebSocket_global(); // ここをglobalに修正
+            connectWebSocket_global();
         }, retryDelay);
     });
 
     return ws;
 }
 
-
-
 function connectWebSocket_main() {
     const wsHost = MISSKEY_URL.replace('https://', '');
     const wsUrl = `wss://${wsHost}/streaming?i=${MISSKEY_TOKEN}`;
     
+    // 既存の接続があれば切断
+    if (currentWs_main && currentWs_main.readyState !== WebSocket.CLOSED) {
+        safelyCloseWebSocket(currentWs_main).then(() => {
+            console.log("既存のmain WebSocket接続を切断しました");
+        });
+    }
+    
     const ws = new WebSocket(wsUrl);
+    currentWs_main = ws; // 新しい接続を保存
 
     ws.on('open', async () => {
         retryCount_main = 0; // 接続成功時にリセット
@@ -166,6 +229,7 @@ function connectWebSocket_main() {
         
         ws.send(JSON.stringify(connectMessage));
     });
+
     ws.on('message', (data) => {
         try {
             const message = JSON.parse(data);
@@ -194,6 +258,11 @@ function connectWebSocket_main() {
     });
 
     ws.on('close', async () => {
+        // 現在のインスタンスが自分自身であることを確認
+        if (currentWs_main === ws) {
+            currentWs_main = null;
+        }
+        
         const retryDelay = retryCount_main >= 12 ? 3600000 : 5000; // 12回以上は1時間待機
         await writeLog('info', 'connectWebSocket_main', 
             `WebSocket_main接続が閉じられました。${retryDelay/1000}秒後に再接続を試みます。(試行回数: ${retryCount_main + 1})`, 
@@ -209,4 +278,4 @@ function connectWebSocket_main() {
     return ws;
 }
 
-export { connectWebSocket_hybrid,connectWebSocket_main, connectWebSocket_global };
+export { connectWebSocket_hybrid, connectWebSocket_main, connectWebSocket_global };

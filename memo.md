@@ -9,7 +9,7 @@ chmod -R 777 penetration
 
 
 git add . && git commit -m "
-- フォロー取得時にnullが返却されても処理が続行されてしまい、全フォロワーをアンフォローする問題を修正
-- 絵文字を取得した時にnullが返却されてもDBに書き込まずエラー処理する
+- WebSocket接続の再接続処理に失敗した場合、手動での再起動を必要としていた問題を修正
+※毎日23時に接続処理を再試行する。
 " && git push -u origin development
 
