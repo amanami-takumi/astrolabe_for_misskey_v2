@@ -4,11 +4,14 @@ import { processMentions } from '../processing_mentions.js';
 import { processFollow } from '../prosessing_follow.js';
 import { processGtlNote } from '../misskey_operation/processing_gtl_note.js';
 import { writeLog } from '../db_operation/create_logs.js';
-
+import { air_reply_ollama } from '../webpage_operation/connect_ollama.js';
 config();
+
 
 const MISSKEY_TOKEN = process.env.NOTICE_MISSKEY_TOKEN;
 const MISSKEY_URL = process.env.NOTICE_MISSKEY_URL;
+const MISSKEY_USER_ID = process.env.NOTICE_MISSKEY_BOT_USER_ID;
+const EXCLUSION_MISSKEY_HOST = process.env.EXCLUSION_MISSKEY_HOST || 'misskey.seitendan.com';
 
 // 再試行回数を追跡する変数を追加
 let retryCount_hybrid = 0;
@@ -93,9 +96,42 @@ function connectWebSocket_hybrid() {
 
     // ノート処理関数を修正
     function handleNote(note) {
+        // console.log('ノート受信:', note);
         // メンションを含むノートの場合、処理を実行
         if (note.mentions && note.mentions.length > 0) {
             processMentions(note);
+        }
+        // エアリプOllama処理を実行
+        // note.textが存在しており、20字以上であり、自己の投稿ではない
+
+
+
+        if (note.text && note.userId !== MISSKEY_USER_ID ) {
+            // HTMLタグを除去し、空白をトリム
+
+            let Ollama_note_text = note.text.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim(); 
+            // URLを除去
+            Ollama_note_text = Ollama_note_text.replace(/https?:\/\/[^\s]+/g, '');
+            // :emoji: のようなカスタム絵文字を除去
+            Ollama_note_text = Ollama_note_text.replace(/:[a-zA-Z0-9_]+:/g, '');
+            if (Math.floor(Math.random() * 20) === 0 && note.user.host === null && Ollama_note_text.length >= 10) {
+                air_reply_ollama(Ollama_note_text);
+                writeLog('info', 'connectWebSocket_hybrid',
+                    `エアリプOllama処理を実行_ホストインスタンスの投稿: ${Ollama_note_text}`, null, null)
+                return; // エアリプOllama処理を実行
+            } else if (Math.floor(Math.random() * 50) === 0 && Ollama_note_text.length >= 40) {
+                air_reply_ollama(Ollama_note_text);
+                writeLog('info', 'connectWebSocket_hybrid',
+                    `エアリプOllama処理を実行_一般インスタンスの投稿: ${Ollama_note_text}`, null, null);
+                return; // エアリプOllama処理を実行
+            } else {
+                console.log('エアリプOllama処理はスキップされました',note.user.host, note);
+                writeLog('info', 'connectWebSocket_hybrid',
+                    `エアリプOllama処理はスキップされました:${note.user.host} ${Ollama_note_text}`, null, null);
+                return; // エアリプOllama処理をスキップ
+            }
+
+
         }
     }
 
@@ -115,7 +151,7 @@ function connectWebSocket_hybrid() {
             null, null);
         
         setTimeout(() => {
-            console.log('WebSocket再接続を試みます...');
+            console.log('WebSocket_hybridの再接続を試みます...');
             retryCount_hybrid++;
             connectWebSocket_hybrid();
         }, retryDelay);
@@ -191,7 +227,7 @@ function connectWebSocket_global() {
             null, null);
         
         setTimeout(() => {
-            console.log('WebSocket再接続を試みます...');
+            console.log('WebSocket_globalの再接続を試みます...');
             retryCount_global++;
             connectWebSocket_global();
         }, retryDelay);
@@ -269,7 +305,7 @@ function connectWebSocket_main() {
             null, null);
         
         setTimeout(() => {
-            console.log('WebSocket_main再接続を試みます...');
+            console.log('WebSocket_mainの再接続を試みます...');
             retryCount_main++;
             connectWebSocket_main();
         }, retryDelay);

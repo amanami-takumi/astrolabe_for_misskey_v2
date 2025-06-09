@@ -5,7 +5,7 @@ import { dirname, join } from 'path';
 import axios from 'axios';
 import { sendDM, createNote, createNoteWithMedia } from './misskey_operation/create_note.js';
 import { uploadMisskeyFile} from './misskey_operation/create_file.js';
-import { getMultiFeed } from './webpage_operation/get_feed.js';
+import { getMultiFeed, getMultiFeed_v2} from './webpage_operation/get_feed.js';
 import { getRandomDinner } from './db_operation/get_dinner.js';
 import { executeMaintenance } from './maintenance.js';
 import { getRandomDinnerText, getRandomNoteText} from './db_operation/get_note_text.js';
@@ -14,9 +14,11 @@ import { getMemorandumDinnerText, getMultiMemorandum} from './db_operation/get_m
 import { updateMultiKVoperation, getMultiKVoperation } from './db_operation/multi_db_connection.js';
 import {connectWebSocket_hybrid,connectWebSocket_main, connectWebSocket_global} from './misskey_operation/connect_websocket.js';
 import { writeLog } from './db_operation/create_logs.js';
+import {getScraping} from './webpage_operation/get_scraping.js';
 import schedule from 'node-schedule';
 import { getMisskeyEmojiList, getMisskeyEmojiListSingle } from './misskey_operation/get_emoji.js';
 import { send } from 'process';
+import { summary_ollama } from './webpage_operation/connect_ollama.js';
 
 config();
 
@@ -26,6 +28,7 @@ const scheduleOptions = {
   
 const __dirname = dirname(fileURLToPath(import.meta.url));
 let noteText;
+
 
 
 
@@ -76,6 +79,92 @@ async function night_greeting() {
     
     const info_message = '夜の挨拶を実行';
     await writeLog('info', 'night_greeting', info_message, null, null);
+}
+
+async function multi_feed_v2(FeedURL) {
+    try {
+        // 0-30分のランダムな待機時間を設定
+        await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 31) * 60 * 1000));
+        const News = await getMultiFeed_v2(FeedURL);
+        //console.log(News);
+
+        // フィードが空または無効な場合の早期リターン
+        // News が記事オブジェクトの配列であると仮定
+        if (!News || !Array.isArray(News) || News.length === 0 || !News[0].link) {
+            const warn_message = `フィードが空または無効です (News is not a valid array or is empty, or first item has no link): ${FeedURL}`;
+            await writeLog('warn', 'multi_feed_v2', warn_message, null, null);
+            return;
+        }
+
+        // DBに保存されている前回分のFeedリンクを取得
+        let old_feed_links = await getMultiMemorandum(FeedURL); // URL文字列の配列を期待
+        if (!Array.isArray(old_feed_links)) {
+            old_feed_links = []; // nullまたは未定義の場合は空の配列で初期化
+        }
+        
+        // 前回のリンクと最新のリンクを比較し、差分を取得する。
+        // News は {link: string, title: string, ...} のようなオブジェクトの配列と仮定
+        const new_feed_links = News.map(item => item.link); // URL文字列の配列
+        const added_links = new_feed_links.filter(link => !old_feed_links.includes(link));
+        // const removed_links = old_feed_links.filter(link => !new_feed_links.includes(link)); // removed_links は現在未使用
+
+        // 追加されたリンクがない場合は処理を終了
+        if (added_links.length === 0) {
+            const info_message = `新しい記事はありませんでした: ${FeedURL}`;
+            await writeLog('info', 'multi_feed_v2', info_message, null, null);
+            return;
+        }
+        // 追加されたリンクの中からランダムで一つ抽出する
+        await writeLog('info', 'multi_feed_v2', `新しい記事が見つかりました: ${added_links.length}件`, null, null);
+        const randomLink = added_links[Math.floor(Math.random() * added_links.length)];
+
+        // 取得したフィードの最新記事をスクレイピングして要約を生成
+        const scrapingResult = await getScraping(randomLink); // { title, mainContent } を期待
+
+        let news_comment;
+        const MAX_CONTEXT_LENGTH = 2000;
+
+        if (scrapingResult && scrapingResult.mainContent) {
+            let contentToSummarize = scrapingResult.mainContent;
+            if (contentToSummarize.length > MAX_CONTEXT_LENGTH) {
+                contentToSummarize = contentToSummarize.substring(0, MAX_CONTEXT_LENGTH);
+                await writeLog('info', 'multi_feed_v2', `Scraping text for ${randomLink} was truncated to ${MAX_CONTEXT_LENGTH} characters.`, null, null);
+            }
+            news_comment = await summary_ollama(contentToSummarize);
+            if (!news_comment) { // summary_ollamaがエラー等でnullを返した場合
+                news_comment = "記事の要約を生成できませんでした。";
+                await writeLog('warn', 'multi_feed_v2', `Failed to generate summary for ${randomLink}.`, null, null);
+                return;
+            }
+
+        } else {
+            await writeLog('warn', 'multi_feed_v2', `No main content found for scraping: ${randomLink}. Cannot generate summary.`, null, null);
+            news_comment = "記事の要約を生成できませんでした。";
+            return;
+        }
+
+        // 取得した最新記事のリンク(全件)をDBに保存
+        await updateMultiMemorandum(FeedURL, new_feed_links); // new_feed_links (URL文字列の配列) を保存
+        
+        const FeedName = FeedURL.replace('https://', '').replace('.com', '').replace('.jp', '').replace('.co.jp', '').replace('/feed', '');
+        const info_message_log = `Feed(${FeedName})の新記事(${randomLink})の投稿処理を実行`;
+        await writeLog('info', 'multi_feed_v2', info_message_log, null, null);
+
+        // スクレイピング結果のタイトルを優先し、なければフィード情報、それもなければ固定文字列
+        const selectedArticleInFeed = News.find(article => article.link === randomLink);
+        const articleTitle = scrapingResult.title || (selectedArticleInFeed ? selectedArticleInFeed.title : "タイトル不明");
+        news_comment = news_comment.replace(/。$/, ' ').trim(); // 。を削除する。
+        news_comment = news_comment.replace(/「.*?」$/, ' ').trim(); // 「」を削除する。
+        news_comment = news_comment.replace(/“.*?”$/, ' ').trim(); // ”を削除する。
+        news_comment = news_comment.replace(/！.*?$/, ' ').trim(); // ！を削除する。
+        const message = `${news_comment}らしいです。\n\n${articleTitle}\n${randomLink}`;
+        const result = await createNote(message);
+
+    } catch (error) {
+        const error_message = `フィード処理エラー (multi_feed_v2 for ${FeedURL}): ${error.message}`;
+        await writeLog('error', 'multi_feed_v2', error_message, null, error.stack); // エラーオブジェクト全体やスタックトレースも記録するとデバッグに役立つ
+        console.error(error_message, error);
+    }
 }
 
 async function multi_feed(FeedURL) {
@@ -385,6 +474,7 @@ async function think_Dinner() {
     const dinner = await getRandomDinner();
     if (dinner) {
         // 0-30分のランダムな待機時間を設定
+        
         await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 31) * 60 * 1000));
         if (Math.random() < 0.1) {
             const message = "はわわっ……\nおやつを食べ過ぎてしまいました。。\n\n今夜はお腹いっぱいです＞＜"
@@ -437,21 +527,21 @@ async function main() {
         schedule.scheduleJob({scheduleOptions, rule: '0 7 * * *'}, morning_greeting);
         schedule.scheduleJob({scheduleOptions, rule: '30 7 * * *'}, breakfast);
         schedule.scheduleJob({scheduleOptions, rule: '0 8 * * *'}, () => python_connect('/generate/text'));
-        schedule.scheduleJob({scheduleOptions, rule: '0 9 * * *'}, () => multi_feed('https://trafficnews.jp/feed'));
+        schedule.scheduleJob({scheduleOptions, rule: '0 9 * * *'}, () => multi_feed_v2('https://trafficnews.jp/feed'));
         schedule.scheduleJob({scheduleOptions, rule: '0 10 * * *'}, () => python_connect('/generate/text'));
-        schedule.scheduleJob({scheduleOptions, rule: '30 11 * * *'}, () => multi_feed('https://gourmet.watch.impress.co.jp/data/rss/1.0/grw/feed.rdf'));
-        schedule.scheduleJob({scheduleOptions, rule: '0 12 * * *'}, () => multi_feed('https://gigazine.net/news/rss_2.0/'));
+        schedule.scheduleJob({scheduleOptions, rule: '30 11 * * *'}, () => multi_feed_v2('https://gourmet.watch.impress.co.jp/data/rss/1.0/grw/feed.rdf'));
+        schedule.scheduleJob({scheduleOptions, rule: '0 12 * * *'}, () => multi_feed_v2('https://gigazine.net/news/rss_2.0/'));
         schedule.scheduleJob({scheduleOptions, rule: '0 13 * * *'}, () => python_connect('/generate/text'));
-        schedule.scheduleJob({scheduleOptions, rule: '0 14 * * *'}, () => multi_feed('https://nazology.kusuguru.co.jp/feed'));
+        schedule.scheduleJob({scheduleOptions, rule: '0 14 * * *'}, () => multi_feed_v2('https://nazology.kusuguru.co.jp/feed'));
         schedule.scheduleJob({scheduleOptions, rule: '0 15 * * *'}, () => python_connect('/generate/text'));
-        schedule.scheduleJob({scheduleOptions, rule: '0 16 * * *'}, () => multi_feed('https://www.publickey1.jp/atom.xml'));
+        schedule.scheduleJob({scheduleOptions, rule: '0 16 * * *'}, () => multi_feed_v2('https://www.publickey1.jp/atom.xml'));
         schedule.scheduleJob({scheduleOptions, rule: '0 17 * * *'}, () => python_connect('/generate/text'));
-        schedule.scheduleJob({scheduleOptions, rule: '0 18 * * *'}, () => multi_feed('https://www.gamespark.jp/rss20/index.rdf'));
+        schedule.scheduleJob({scheduleOptions, rule: '0 18 * * *'}, () => multi_feed_v2('https://www.gamespark.jp/rss20/index.rdf'));
         schedule.scheduleJob({scheduleOptions, rule: '30 18 * * *'}, bathing);
         schedule.scheduleJob({scheduleOptions, rule: '0 19 * * *'}, think_Dinner);
         schedule.scheduleJob({scheduleOptions, rule: '0 20 * * *'}, () => python_connect_wordcloud('/generate/wordcloud'));
         schedule.scheduleJob({scheduleOptions, rule: '30 20 * * *'}, () => python_connect('/generate/text'));
-        schedule.scheduleJob({scheduleOptions, rule: '0 21 * * *'}, () => multi_feed('https://automaton-media.com/feed/'));
+        schedule.scheduleJob({scheduleOptions, rule: '0 21 * * *'}, () => multi_feed_v2('https://automaton-media.com/feed/'));
         schedule.scheduleJob({scheduleOptions, rule: '30 21 * * *'}, emoji_difference);
         schedule.scheduleJob({scheduleOptions, rule: '0 22 * * *'}, night_greeting);
         schedule.scheduleJob({scheduleOptions, rule: '0 23 * * *'}, async () => { await connectWebSocket_global(); });
@@ -463,9 +553,11 @@ async function main() {
         // test(`/generate/text`);
         schedule.scheduleJob('0 3 * * *', async () => {const result = await executeMaintenance();});
         // await test('https://gourmet.watch.impress.co.jp/data/rss/1.0/grw/feed.rdf')
+
         // 本番運用ではDMを送信する。sendDM("なんか起動したみたいですよ");
-        console.log("起動しました");
         
+        console.log("起動しました");
+        //await multi_feed_v2('https://trafficnews.jp/feed');
         await writeLog('info', 'main', `起動しました`, null, null);
     } catch (error) {
         const error_message = `エラーが発生しました: ${error.message}`;

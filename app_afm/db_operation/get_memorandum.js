@@ -24,9 +24,10 @@ async function getMemorandumDinnerText() {
 
         const query = 'SELECT value FROM memorandum WHERE key = $1';
         const result = await client.query(query, ['dinner']);
+        console.log(`memorandumからdinnerを取得: ${JSON.stringify(result.rows)}`);
 
         if (result.rows.length === 0 || !result.rows[0].value) {
-            console.error('dinner_textが見つかりません');
+            console.error('memorandumにdinnerが見つかりません');
             return null;
         }
 
@@ -35,7 +36,7 @@ async function getMemorandumDinnerText() {
         return dinnerTexts;
 
     } catch (error) {
-        console.error(`dinner_text取得中にエラーが発生: ${error.message}`);
+        console.error(`memorandumからdinnerを取得中にエラーが発生: ${error.message}`);
         return null;
     } finally {
         if (connected) {
@@ -59,16 +60,19 @@ async function getMultiMemorandum(key) {
 
         const query = 'SELECT value FROM memorandum WHERE key = $1';
         const result = await client.query(query, [key]);
+        console.log(`memorandumから${key}を取得: ${JSON.stringify(result.rows)}`);
 
         if (result.rows.length === 0 || !result.rows[0].value) {
-            console.error('dinner_textが見つかりません');
+            console.error(`${key}が見つかりません`);
             return null;
         }
+
 
         const dinnerTexts = result.rows[0].value;
         console.log(dinnerTexts);
         return dinnerTexts;
 
+        
     } catch (error) {
         console.error(`memorandumテーブルのデータ取得中にエラーが発生: ${error.message}`);
         return null;

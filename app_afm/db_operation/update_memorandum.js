@@ -24,17 +24,16 @@ async function updateMultiMemorandum( key='dinner',value) {
 
         const query = 'UPDATE memorandum SET value = $1 WHERE key = $2';
         const result = await client.query(query, [value, key]);
-        
         if (result.rowCount === 0) {
-            console.error('dinnerのメモが見つかりません');
+            console.error(`${key}のメモが見つかりません`);
             return false;
         }
-        
-        console.log('dinnerのメモを更新しました');
+
+        console.log(`${key}のメモを更新しました`);
         return true;
 
     } catch (error) {
-        console.error(`dinnerメモ更新中にエラーが発生: ${error.message}`);
+        console.error(`${key}メモ更新中にエラーが発生: ${error.message}`);
         return false;
     } finally {
         if (connected) {
