@@ -5,6 +5,7 @@ import { processFollow } from '../prosessing_follow.js';
 import { processGtlNote } from '../misskey_operation/processing_gtl_note.js';
 import { writeLog } from '../db_operation/create_logs.js';
 import { air_reply_ollama } from '../webpage_operation/connect_ollama.js';
+import { createMisskeyReaction } from './create_reaction.js';   
 config();
 
 
@@ -100,6 +101,10 @@ function connectWebSocket_hybrid() {
         // メンションを含むノートの場合、処理を実行
         if (note.mentions && note.mentions.length > 0) {
             processMentions(note);
+        if (note.text && note.text.includes('ラーベちゃん') && Math.floor(Math.random() * 5) === 0) {
+            createMisskeyReaction(note.id, ':astrolabe_icon:'); // ラーベちゃんの投稿にリアクションを追加
+            writeLog('info', 'connectWebSocket_hybrid', `ラーベちゃんの投稿にリアクションを追加: ${note.id}`, null, null);
+            return; // ラーベちゃんの投稿はここで処理を終了
         }
         // エアリプOllama処理を実行
         // note.textが存在しており、20字以上であり、自己の投稿ではない
@@ -115,12 +120,12 @@ function connectWebSocket_hybrid() {
             // :emoji: のようなカスタム絵文字を除去
             Ollama_note_text = Ollama_note_text.replace(/:[a-zA-Z0-9_]+:/g, '');
             if (Math.floor(Math.random() * 20) === 0 && note.user.host === null && Ollama_note_text.length >= 10) {
-                air_reply_ollama(Ollama_note_text);
+                air_reply_ollama(Ollama_note_text,note.id);
                 writeLog('info', 'connectWebSocket_hybrid',
                     `エアリプOllama処理を実行_ホストインスタンスの投稿: ${Ollama_note_text}`, null, null)
                 return; // エアリプOllama処理を実行
             } else if (Math.floor(Math.random() * 50) === 0 && Ollama_note_text.length >= 40) {
-                air_reply_ollama(Ollama_note_text);
+                air_reply_ollama(Ollama_note_text,note.id);
                 writeLog('info', 'connectWebSocket_hybrid',
                     `エアリプOllama処理を実行_一般インスタンスの投稿: ${Ollama_note_text}`, null, null);
                 return; // エアリプOllama処理を実行
@@ -158,7 +163,7 @@ function connectWebSocket_hybrid() {
     });
 
     return ws;
-}
+}}
 
 function connectWebSocket_global() {
     const wsHost = MISSKEY_URL.replace('https://', '');

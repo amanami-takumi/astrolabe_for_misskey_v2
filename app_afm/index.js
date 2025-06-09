@@ -130,6 +130,7 @@ async function multi_feed_v2(FeedURL) {
                 contentToSummarize = contentToSummarize.substring(0, MAX_CONTEXT_LENGTH);
                 await writeLog('info', 'multi_feed_v2', `Scraping text for ${randomLink} was truncated to ${MAX_CONTEXT_LENGTH} characters.`, null, null);
             }
+            await writeLog('info', 'multi_feed_v2', `テキストのスクレイピング結果: ${contentToSummarize}`, null, null);
             news_comment = await summary_ollama(contentToSummarize);
             if (!news_comment) { // summary_ollamaがエラー等でnullを返した場合
                 news_comment = "記事の要約を生成できませんでした。";
@@ -154,10 +155,10 @@ async function multi_feed_v2(FeedURL) {
         const selectedArticleInFeed = News.find(article => article.link === randomLink);
         const articleTitle = scrapingResult.title || (selectedArticleInFeed ? selectedArticleInFeed.title : "タイトル不明");
         news_comment = news_comment.replace(/。$/, ' ').trim(); // 。を削除する。
-        news_comment = news_comment.replace(/「.*?」$/, ' ').trim(); // 「」を削除する。
-        news_comment = news_comment.replace(/“.*?”$/, ' ').trim(); // ”を削除する。
-        news_comment = news_comment.replace(/！.*?$/, ' ').trim(); // ！を削除する。
-        const message = `${news_comment}らしいです。\n\n${articleTitle}\n${randomLink}`;
+        news_comment = news_comment.replace(/「.*?」/g, ' ').trim(); // 「」を削除する。
+        news_comment = news_comment.replace(/“.*?”/g, ' ').trim(); // ”を削除する。
+        news_comment = news_comment.replace(/！.*?/g, ' ').trim(); // ！を削除する。
+        const message = `${news_comment}らしい。\n\n${articleTitle}\n${randomLink}`;
         const result = await createNote(message);
 
     } catch (error) {

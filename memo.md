@@ -9,13 +9,13 @@ chmod -R 777 penetration
 
 
 git add . && git commit -m "
-Ollamaとの連接を実装
-- Ollamaとの連接を行うconnect_ollama.jsを実装
-- RSS投稿にOllamaの要約を組み込んだ、multi_feed_v2関数を実装
-- 要約に必要なスクレイピング処理を行うget_scraping.jsを実装
-- エアリプライの演出を行うための抽出処理をconnect_websocket.jsに実装
-RSSの改善
-- getMultiFeed_v2関数を実装し、最新の投稿ではなく差分を取得して抽出処理をするように
+Ollamaとの連接実装の修正
+- エアリプライ演出にHeatによる上限を設定
+- エアリプライ演出時に、対象となったNoteをRenoteするように
+  - これに伴ってcreate_renote.jsを実装
+- 要約において、逸脱した出力に対する対応を実装
+- 要約における、出力文章のクリーニング処理を修正
+- 
 " && git push -u origin development
 
 エアリプOllama処理はスキップされました null {

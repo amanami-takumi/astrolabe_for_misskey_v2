@@ -3,7 +3,8 @@ import OpenAI from 'openai';
 import { writeLog } from '../db_operation/create_logs.js';
 import axios from 'axios';
 import { sendDM, createNote, createNoteWithMedia } from '../misskey_operation/create_note.js';
-
+import {createMisskeyRenote} from '../misskey_operation/create_renote.js';
+import { updateMultiKVoperation, getMultiKVoperation } from '../db_operation/multi_db_connection.js';
 
 
 config();
@@ -15,8 +16,38 @@ const OLLAMA_API_URL = process.env.OLLAMA_API_URL || '192.168.0.176:11434';
 
 
 
-async function air_reply_ollama(input_text) {
+async function air_reply_ollama(input_text,note_id) {
     try {
+        // Heatによる暴走抑止の処理
+        const currentHeat = await getMultiKVoperation('protection', 'air_reply_heat');
+        const maxHeat = await getMultiKVoperation('settings', 'max_air_reply_heat');
+        if (Number(maxHeat) !== null && Number(currentHeat) > Number(maxHeat)) {
+            const error_message = `投稿回数が制限(${maxHeat}回)を超えました。\n現在のHeat値は${currentHeat}です`;
+            await writeLog('error', 'summary_ollama', error_message, null, null); 
+            return null;
+        }
+
+        // 頻回なエアリプ投稿を防ぐための時間制限
+        const air_reply_check_neer = await getMultiKVoperation('memorandum', 'air_reply_check_neer');
+        const now = new Date();
+        const neerTime = new Date(air_reply_check_neer);
+        if (!isNaN(neerTime.getTime()) && now < neerTime) {
+            // air_reply_check_neerが有効な日付として設定されていて、現在時刻がその時刻より前の場合
+            const info_message = `エアリプ投稿はまだ許可されていません（次回許可時刻: ${air_reply_check_neer}）`;
+            await writeLog('info', 'air_reply_ollama', info_message, null, null);
+            return null;
+        } else if (isNaN(neerTime.getTime())) {
+            // air_reply_check_neerが設定されていない場合
+            // 次回のエアリプ投稿許可時刻を4時間後に設定
+            const nextNeerTime = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+            await updateMultiKVoperation('memorandum', nextNeerTime.toISOString(), 'air_reply_check_neer');
+            const info_message = `air_reply_check_neerを4時間後に設定しました（次回許可時刻: ${nextNeerTime.toISOString()}）`;
+            await writeLog('info', 'air_reply_ollama', info_message, null, null);
+            return null;
+        }
+
+        // Renoteを実行する
+        await createMisskeyRenote(note_id);
 
         // 0-5分のランダムな待機時間を設定
         await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 6) * 60 * 1000));
@@ -93,7 +124,6 @@ async function air_reply_ollama(input_text) {
 
 async function summary_ollama(input_text) {
     try {
-
         // システムプロンプトの作成
         const system_prompt = `
 あなたは人間らしく振る舞うための小規模言語モデルです。以下の条件に従って、記事を要約してください。
@@ -103,9 +133,6 @@ async function summary_ollama(input_text) {
 - 出力は1文のみで、余計な装飾や文頭の記号などはつけないこと。
 `;
 
-
-        
-        // OllamaのAPI仕様に合わせたリクエストボディを作成
         const requestBody = {
             model: "hf.co/SakanaAI/TinySwallow-1.5B-Instruct-GGUF:latest",
             messages: [
@@ -121,47 +148,54 @@ async function summary_ollama(input_text) {
             stream: false
         };
 
-        //console.log(requestBody); // リクエストボディの内容をログに出力
-
-        // OLLAMA_API_URLへの疎通確認
         const accessURL = `http://${OLLAMA_API_URL}/api/chat`;
         try {
             await axios.post(accessURL);
             console.log(`Ollama APIへの疎通確認に成功: ${accessURL}`);
         } catch (connErr) {
             console.error(`Ollama APIへの疎通確認に失敗: ${accessURL} - ${connErr.message}`);
-            //throw new Error('Ollama APIへの接続に失敗しました');
-        }        
-    
-        // API呼び出し開始時間
-        const startTime = performance.now();
+        }
 
-        // Ollamaサーバーに対してPOSTリクエストを送信
-        const response = await axios.post(accessURL, requestBody);
+        let message = null;
+        let duration = 0;
+        let attempts = 0;
+        const maxAttempts = 3; // 初回＋2回まで
 
-        // API呼び出し終了時間
-        const endTime = performance.now();
-        const duration = endTime - startTime; // 処理時間（ミリ秒）
+        while (attempts < maxAttempts) {
+            attempts++;
+            const startTime = performance.now();
+            const response = await axios.post(accessURL, requestBody);
+            const endTime = performance.now();
+            duration = endTime - startTime;
 
-        console.log(`Ollama APIへのリクエスト: ${accessURL}`); // リクエストURLをログに出力
-        console.log(response);
-        // レスポンスからテキストを取得
-        if (response.data && response.data.message && response.data.message.content) {
-            const message = response.data.message.content.trim();
-            // await createNote(message); // Misskeyへの投稿を削除
-            
-            const info_message = `Ollama要約生成を実行 (処理時間: ${duration.toFixed(2)}ms)`; // ログメッセージを修正
-            await writeLog('info', 'summary_ollama', info_message, null, null); // 関数名をログに正しく反映
-            return message; // 要約テキストを返す
+            if (response.data && response.data.message && response.data.message.content) {
+                message = response.data.message.content.trim();
+                if (message.length < 100) {
+                    break;
+                } else {
+                    await writeLog('warn', 'summary_ollama', `要約が100字以上のため再生成を試みます（${attempts}回目）`, null, null);
+                }
+            } else {
+
+                throw new Error('有効なレスポンスデータが見つかりません');
+            }
+        }
+
+        if (message && message.length < 100) {
+            const info_message = `Ollama要約生成を実行 (処理時間: ${duration.toFixed(2)}ms)`;
+            await writeLog('info', 'summary_ollama', info_message, null, null);
+            return message;
         } else {
-            throw new Error('有効なレスポンスデータが見つかりません');
+            const warn_message = `Ollama要約生成で100字未満の要約が得られませんでした（${attempts}回試行）`;
+            await writeLog('warn', 'summary_ollama', warn_message, null, null);
+            return null;
         }
     }
     catch (error) {
-        const error_message = `Ollama接続エラー (summary_ollama): ${error.message}`; // エラーメッセージにコンテキスト追加
-        await writeLog('error', 'summary_ollama', error_message, null, null); // 関数名をログに正しく反映
+        const error_message = `Ollama接続エラー (summary_ollama): ${error.message}`;
+        await writeLog('error', 'summary_ollama', error_message, null, null);
         console.error(error_message);
-        return null; // エラー時はnullを返すなど、エラー処理を明確に
+        return null;
     }
 }
 
