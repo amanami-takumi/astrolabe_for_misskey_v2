@@ -46,8 +46,17 @@ async function air_reply_ollama(input_text,note_id) {
             return null;
         }
 
+
         // Renoteを実行する
-        await createMisskeyRenote(note_id);
+        let renote_result = await createMisskeyRenote(note_id);
+        if (!renote_result) {
+            const error_message = `Renoteの実行に失敗しました: note_id=${note_id}`;
+            await writeLog('error', 'air_reply_ollama', error_message, null, null);
+            return null;
+        } else {
+            const info_message = `Renoteの実行に成功: note_id=${note_id}`;
+            await writeLog('info', 'air_reply_ollama', info_message, null, null);
+        }
 
         // 0-5分のランダムな待機時間を設定
         await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 6) * 60 * 1000));
@@ -97,6 +106,13 @@ async function air_reply_ollama(input_text,note_id) {
 
         // Ollamaサーバーに対してPOSTリクエストを送信
         const response = await axios.post(accessURL, requestBody);
+
+        // Heat値を更新
+        const newHeat = Number(currentHeat) + 1;
+        await updateMultiKVoperation('protection', newHeat, 'air_reply_heat');
+        // air_reply_check_neerを4時間後に更新
+        const nextNeerTime = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+        await updateMultiKVoperation('memorandum', nextNeerTime.toISOString(), 'air_reply_check_neer');
 
         // API呼び出し終了時間
         const endTime = performance.now();

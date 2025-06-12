@@ -19,6 +19,9 @@ import schedule from 'node-schedule';
 import { getMisskeyEmojiList, getMisskeyEmojiListSingle } from './misskey_operation/get_emoji.js';
 import { send } from 'process';
 import { summary_ollama } from './webpage_operation/connect_ollama.js';
+import {createMisskeyRenote} from './misskey_operation/create_renote.js';
+
+
 
 config();
 
@@ -119,7 +122,7 @@ async function multi_feed_v2(FeedURL) {
         const randomLink = added_links[Math.floor(Math.random() * added_links.length)];
 
         // 取得したフィードの最新記事をスクレイピングして要約を生成
-        const scrapingResult = await getScraping(randomLink); // { title, mainContent } を期待
+        const scrapingResult = await getScraping(randomLink, true); // { title, mainContent } を期待
 
         let news_comment;
         const MAX_CONTEXT_LENGTH = 2000;
@@ -545,9 +548,9 @@ async function main() {
         schedule.scheduleJob({scheduleOptions, rule: '0 21 * * *'}, () => multi_feed_v2('https://automaton-media.com/feed/'));
         schedule.scheduleJob({scheduleOptions, rule: '30 21 * * *'}, emoji_difference);
         schedule.scheduleJob({scheduleOptions, rule: '0 22 * * *'}, night_greeting);
-        schedule.scheduleJob({scheduleOptions, rule: '0 23 * * *'}, async () => { await connectWebSocket_global(); });
-        schedule.scheduleJob({scheduleOptions, rule: '0 23 * * *'}, async () => { await connectWebSocket_main(); });
-        schedule.scheduleJob({scheduleOptions, rule: '0 23 * * *'}, async () => { await connectWebSocket_hybrid(); });
+        
+        
+        
         // schedule.scheduleJob({scheduleOptions, rule: '20 23 * * *'}, () => test('test'));
         // python_connect_wordcloud('/generate/wordcloud')
         // 毎日3時にheatカウンターをリセット
@@ -556,7 +559,16 @@ async function main() {
         // await test('https://gourmet.watch.impress.co.jp/data/rss/1.0/grw/feed.rdf')
 
         // 本番運用ではDMを送信する。sendDM("なんか起動したみたいですよ");
+
         
+        //const renote_result = await createMisskeyRenote(`a8u4ldhsw3`)
+        if (renote_result) {
+            console.log('Renote successful:', renote_result);
+            await writeLog('info', 'main', `Renote successful: ${renote_result}`, null, null);
+        } else {
+            console.log('Renote failed');
+            await writeLog('error', 'main', `Renote failed`, null, null);
+        }
         console.log("起動しました");
         //await multi_feed_v2('https://trafficnews.jp/feed');
         await writeLog('info', 'main', `起動しました`, null, null);
