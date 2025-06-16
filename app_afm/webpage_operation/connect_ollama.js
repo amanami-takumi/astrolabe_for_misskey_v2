@@ -46,7 +46,9 @@ async function air_reply_ollama(input_text,note_id) {
             return null;
         }
 
-
+        // 0-5分のランダムな待機時間を設定
+        await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 6) * 60 * 1000));
+        
         // Renoteを実行する
         let renote_result = await createMisskeyRenote(note_id);
         if (!renote_result) {
@@ -58,8 +60,7 @@ async function air_reply_ollama(input_text,note_id) {
             await writeLog('info', 'air_reply_ollama', info_message, null, null);
         }
 
-        // 0-5分のランダムな待機時間を設定
-        await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 6) * 60 * 1000));
+
         // システムプロンプトの作成
         const system_prompt = `
 あなたはSNS上で人間らしく振る舞うための小規模言語モデルです。以下の条件に従って、投稿に対する「エアリプ」を出力してください。
@@ -148,9 +149,9 @@ async function summary_ollama(input_text) {
 - 丁寧語は禁止です（例：「です」「ます」などは使わない）。
 - 出力は1文のみで、余計な装飾や文頭の記号などはつけないこと。
 `;
-
+        // 旧モデル：model: "hf.co/SakanaAI/TinySwallow-1.5B-Instruct-GGUF:latest",
         const requestBody = {
-            model: "hf.co/SakanaAI/TinySwallow-1.5B-Instruct-GGUF:latest",
+            model: "phi4",
             messages: [
                 {
                     role: "system",

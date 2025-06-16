@@ -514,4 +514,34 @@ function createMainWebSocket(wsUrl) {
     });
 }
 
-export { connectWebSocket_hybrid, connectWebSocket_main, connectWebSocket_global };
+// WebSocketの状態を確認する関数
+function checkWebSocketStatus() {
+    const states = {
+        0: 'CONNECTING',
+        1: 'OPEN',
+        2: 'CLOSING',
+        3: 'CLOSED'
+    };
+    
+    const status = {
+        hybrid: {
+            connected: currentWs_hybrid !== null && currentWs_hybrid.readyState === WebSocket.OPEN,
+            state: currentWs_hybrid ? states[currentWs_hybrid.readyState] : 'NULL',
+            retryCount: retryCount_hybrid
+        },
+        global: {
+            connected: currentWs_global !== null && currentWs_global.readyState === WebSocket.OPEN,
+            state: currentWs_global ? states[currentWs_global.readyState] : 'NULL',
+            retryCount: retryCount_global
+        },
+        main: {
+            connected: currentWs_main !== null && currentWs_main.readyState === WebSocket.OPEN,
+            state: currentWs_main ? states[currentWs_main.readyState] : 'NULL',
+            retryCount: retryCount_main
+        }
+    };
+    
+    return status;
+}
+
+export { connectWebSocket_hybrid, connectWebSocket_main, connectWebSocket_global, checkWebSocketStatus };

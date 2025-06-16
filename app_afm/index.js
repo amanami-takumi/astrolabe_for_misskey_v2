@@ -12,7 +12,7 @@ import { getRandomDinnerText, getRandomNoteText} from './db_operation/get_note_t
 import { updateMultiMemorandum } from './db_operation/update_memorandum.js';
 import { getMemorandumDinnerText, getMultiMemorandum} from './db_operation/get_memorandum.js';
 import { updateMultiKVoperation, getMultiKVoperation } from './db_operation/multi_db_connection.js';
-import {connectWebSocket_hybrid,connectWebSocket_main, connectWebSocket_global} from './misskey_operation/connect_websocket.js';
+import {connectWebSocket_hybrid, connectWebSocket_main, connectWebSocket_global, checkWebSocketStatus} from './misskey_operation/connect_websocket.js';
 import { writeLog } from './db_operation/create_logs.js';
 import {getScraping} from './webpage_operation/get_scraping.js';
 import schedule from 'node-schedule';
@@ -122,7 +122,7 @@ async function multi_feed_v2(FeedURL) {
         const randomLink = added_links[Math.floor(Math.random() * added_links.length)];
 
         // 取得したフィードの最新記事をスクレイピングして要約を生成
-        const scrapingResult = await getScraping(randomLink, true); // { title, mainContent } を期待
+        const scrapingResult = await getScraping(randomLink, false); // { title, mainContent } を期待
 
         let news_comment;
         const MAX_CONTEXT_LENGTH = 2000;
@@ -158,7 +158,7 @@ async function multi_feed_v2(FeedURL) {
         const selectedArticleInFeed = News.find(article => article.link === randomLink);
         const articleTitle = scrapingResult.title || (selectedArticleInFeed ? selectedArticleInFeed.title : "タイトル不明");
         news_comment = news_comment.replace(/。$/, ' ').trim(); // 。を削除する。
-        news_comment = news_comment.replace(/「.*?」/g, ' ').trim(); // 「」を削除する。
+        news_comment = news_comment.replace(/「|」/g, '').trim(); // 「」の記号だけを削除し、内容は保持する
         news_comment = news_comment.replace(/“.*?”/g, ' ').trim(); // ”を削除する。
         news_comment = news_comment.replace(/！.*?/g, ' ').trim(); // ！を削除する。
         const message = `${news_comment}らしい。\n\n${articleTitle}\n${randomLink}`;
@@ -520,6 +520,60 @@ async function test(endpoint) {
     }
 }
 
+// WebSocketの状態をチェックしてログに記録する関数
+async function checkWebSocketConnections() {
+    try {
+        // WebSocketの状態を取得
+        const status = checkWebSocketStatus();
+        
+        // 各接続の状態をログに記録
+        const logMessages = [];
+        let allConnected = true;
+        
+        for (const [type, info] of Object.entries(status)) {
+            const connectionStatus = info.connected ? '正常に接続中' : `未接続 (状態: ${info.state})`;
+            logMessages.push(`${type}: ${connectionStatus}, 再試行回数: ${info.retryCount}`);
+            
+            if (!info.connected) {
+                allConnected = false;
+            }
+        }
+        
+        // ログメッセージを作成
+        const summary = allConnected ? 
+            'すべてのWebSocket接続は正常に機能しています' : 
+            '一部のWebSocket接続に問題があります';
+        
+        await writeLog('info', 'checkWebSocketConnections', 
+            `WebSocket接続状態の定期チェック: ${summary}\n${logMessages.join('\n')}`, null, null);
+        
+        console.log('WebSocket接続状態の定期チェック完了:', summary);
+        
+        // 問題がある場合は再接続を試みる
+        if (!allConnected) {
+            if (!status.hybrid.connected) {
+                console.log('hybrid WebSocket接続を再確立します...');
+                await connectWebSocket_hybrid();
+            }
+            if (!status.global.connected) {
+                console.log('global WebSocket接続を再確立します...');
+                await connectWebSocket_global();
+            }
+            if (!status.main.connected) {
+                console.log('main WebSocket接続を再確立します...');
+                await connectWebSocket_main();
+            }
+            
+            await writeLog('info', 'checkWebSocketConnections', 
+                '切断されたWebSocket接続の再確立を試みました', null, null);
+        }
+    } catch (error) {
+        const errorMessage = `WebSocket状態チェック中にエラーが発生しました: ${error.message}`;
+        console.error(errorMessage);
+        await writeLog('error', 'checkWebSocketConnections', errorMessage, null, null);
+    }
+}
+
 async function main() {
     try {
         // WebSocket接続
@@ -549,7 +603,8 @@ async function main() {
         schedule.scheduleJob({scheduleOptions, rule: '30 21 * * *'}, emoji_difference);
         schedule.scheduleJob({scheduleOptions, rule: '0 22 * * *'}, night_greeting);
         
-        
+        // WebSocketの状態を毎日23時にチェック
+        schedule.scheduleJob({scheduleOptions, rule: '0 23 * * *'}, checkWebSocketConnections);
         
         // schedule.scheduleJob({scheduleOptions, rule: '20 23 * * *'}, () => test('test'));
         // python_connect_wordcloud('/generate/wordcloud')
@@ -562,12 +617,13 @@ async function main() {
 
         
         //const renote_result = await createMisskeyRenote(`a8u4ldhsw3`)
-        if (renote_result) {
-            console.log('Renote successful:', renote_result);
-            await writeLog('info', 'main', `Renote successful: ${renote_result}`, null, null);
+        //const scrapingResult = await getScraping(`https://gigazine.net/news/20250613-nvidia-tensorrt/`, true); // { title, mainContent } を期待
+        if (scrapingResult) {
+            console.log('Scraping successful:', scrapingResult);
+            await writeLog('info', 'main', `Scraping successful: ${JSON.stringify(scrapingResult)}`, null, null);
         } else {
-            console.log('Renote failed');
-            await writeLog('error', 'main', `Renote failed`, null, null);
+            console.log('Scraping failed');
+            await writeLog('error', 'main', `Scraping failed`, null, null);
         }
         console.log("起動しました");
         //await multi_feed_v2('https://trafficnews.jp/feed');
