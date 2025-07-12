@@ -46,20 +46,6 @@ async function air_reply_ollama(input_text,note_id) {
             return null;
         }
 
-        // 0-5分のランダムな待機時間を設定
-        await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 6) * 60 * 1000));
-        
-        // Renoteを実行する
-        let renote_result = await createMisskeyRenote(note_id);
-        if (!renote_result) {
-            const error_message = `Renoteの実行に失敗しました: note_id=${note_id}`;
-            await writeLog('error', 'air_reply_ollama', error_message, null, null);
-            return null;
-        } else {
-            const info_message = `Renoteの実行に成功: note_id=${note_id}`;
-            await writeLog('info', 'air_reply_ollama', info_message, null, null);
-        }
-
 
         // システムプロンプトの作成
         const system_prompt = `
@@ -122,6 +108,22 @@ async function air_reply_ollama(input_text,note_id) {
         // レスポンスからテキストを取得
         if (response.data && response.data.message && response.data.message.content) {
             const message = response.data.message.content.trim();
+
+
+            // Renoteを実行する
+            let renote_result = await createMisskeyRenote(note_id);
+            if (!renote_result) {
+                const error_message = `Renoteの実行に失敗しました: note_id=${note_id}`;
+                await writeLog('error', 'air_reply_ollama', error_message, null, null);
+                return null;
+            } else {
+                const info_message = `Renoteの実行に成功: note_id=${note_id}`;
+                await writeLog('info', 'air_reply_ollama', info_message, null, null);
+            }
+
+            // 0-2分のランダムな待機時間を設定
+            await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 3) * 60 * 1000));
+            
             await createNote(message);
             
             const info_message = `Ollama生成テキストの投稿を実行 (処理時間: ${duration.toFixed(2)}ms)`;
@@ -187,7 +189,7 @@ async function summary_ollama(input_text) {
 
             if (response.data && response.data.message && response.data.message.content) {
                 message = response.data.message.content.trim();
-                if (message.length < 100) {
+                if (message.length < 70) {
                     break;
                 } else {
                     await writeLog('warn', 'summary_ollama', `要約が100字以上のため再生成を試みます（${attempts}回目）`, null, null);

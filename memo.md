@@ -9,7 +9,11 @@ chmod -R 777 penetration
 
 
 git add . && git commit -m "
-- 
+- 起動時にChromeをインストールするように
+- Seleniumが正常に使用できるように依存関係の調整
+- スクレイピング結果のクリーニングに関する修正（特定のサイトに対するクリーニングを強化）
+- LLMの出力結果のクリーニングに関する修正（「」の中にある文字を保持するように）
+- 要約に使用するモデルをPhi4に変更
 " && git push -u origin development
 
 エアリプOllama処理はスキップされました null {

@@ -20,7 +20,10 @@ import { getMisskeyEmojiList, getMisskeyEmojiListSingle } from './misskey_operat
 import { send } from 'process';
 import { summary_ollama } from './webpage_operation/connect_ollama.js';
 import {createMisskeyRenote} from './misskey_operation/create_renote.js';
-
+import { setupWebhookRoutes } from './receive_web_hook/receive_web_hook.js';
+import express from 'express';
+import http from 'http';
+const app = express();
 
 
 config();
@@ -574,6 +577,157 @@ async function checkWebSocketConnections() {
     }
 }
 
+app.get('/', (req, res) => {
+        const acceptHeader = req.headers.accept || '';
+        const isHtmlRequest = acceptHeader.includes('text/html');
+        
+        const endpoints = [
+            {
+                path: '/webhook/earthquake',
+                method: 'POST',
+                description: '地震データの通知を受信',
+                parameters: ['sensor_id', 'measure_scale', 'JMA_scale', 'resultant_gal', 'gal_x', 'gal_y', 'gal_z']
+            },
+            {
+                path: '/webhook/temperature',
+                method: 'POST',
+                description: '温度データの通知を受信',
+                parameters: ['temperature', 'timestamp', 'alert']
+            },
+            {
+                path: '/webhook/pressure',
+                method: 'POST',
+                description: '気圧データの通知を受信',
+                parameters: ['pressure', 'trend', 'location', 'timestamp', 'alert']
+            },
+            {
+                path: '/webhook/scheduled',
+                method: 'POST',
+                description: '定時データの受信',
+                parameters: ['sensor_id', 'temperature', 'pressure']
+            },
+            {
+                path: '/webhook/monitoring',
+                method: 'POST',
+                description: '死活監視データの受信',
+                parameters: ['sensor_id', 'temperature', 'pressure']
+            },
+            {
+                path: '/webhook/general',
+                method: 'POST',
+                description: '汎用ウェブフックデータの受信',
+                parameters: ['任意のデータ']
+            },
+            {
+                path: '/webhook/health',
+                method: 'GET',
+                description: 'ヘルスチェック',
+                parameters: []
+            }
+        ];
+        
+        if (isHtmlRequest) {
+            // ブラウザからのアクセス時はHTMLを返す
+            const html = `
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webhook API ヘルプ</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #007acc; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        .endpoint { background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #007acc; }
+        .method { font-weight: bold; color: #007acc; }
+        .path { font-family: monospace; background: #e9ecef; padding: 2px 6px; border-radius: 3px; }
+        .params { margin-top: 10px; }
+        .param { display: inline-block; background: #e7f3ff; padding: 2px 6px; margin: 2px; border-radius: 3px; font-size: 0.9em; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Webhook API ヘルプ</h1>
+        <p>このサーバーは各種センサーデータやイベントの通知を受信するWebhook APIを提供しています。</p>
+        
+        <h2>📋 利用可能なエンドポイント</h2>
+        ${endpoints.map(endpoint => `
+        <div class="endpoint">
+            <div>
+                <span class="method">${endpoint.method}</span>
+                <span class="path">${endpoint.path}</span>
+            </div>
+            <div style="margin-top: 5px; color: #666;">${endpoint.description}</div>
+            ${endpoint.parameters.length > 0 ? `
+            <div class="params">
+                <strong>パラメータ:</strong>
+                ${endpoint.parameters.map(param => `<span class="param">${param}</span>`).join('')}
+            </div>
+            ` : ''}
+        </div>
+        `).join('')}
+        
+        <h2>📝 使用例</h2>
+        <div class="endpoint">
+            <strong>温度データの送信例:</strong>
+            <pre style="background: #f8f9fa; padding: 10px; margin-top: 10px; overflow-x: auto;">
+curl -X POST http://localhost:5000/webhook/temperature \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "temperature": 25.5,
+    "timestamp": "2025-07-02T12:00:00Z",
+    "alert": false
+  }'</pre>
+        </div>
+        
+        <div class="footer">
+            <p>最終更新: ${new Date().toISOString()}</p>
+            <p>サーバー稼働中 🟢</p>
+        </div>
+    </div>
+</body>
+</html>`;
+            res.send(html);
+        } else {
+            // API呼び出し時はJSONを返す
+            res.json({
+                title: 'Webhook API ヘルプ',
+                description: 'このサーバーは各種センサーデータやイベントの通知を受信するWebhook APIを提供しています。',
+                server_status: 'running',
+                timestamp: new Date().toISOString(),
+                endpoints: endpoints
+            });
+        }
+    });
+    
+
+const port = 5000;
+
+
+// ウェブフックルートの設定
+setupWebhookRoutes(app);
+console.log('ウェブフックルートが設定されました');
+await writeLog('info', 'main', 'ウェブフックルートが設定されました', null, null);
+
+const server = http.createServer(app);
+
+server.listen(port, () => {
+    console.log(`Express app listening on port ${port}`);
+    console.log('ウェブフック受信可能なエンドポイント:');
+    console.log('- POST /webhook/earthquake (地震センサー)');
+    console.log('- POST /webhook/temperature (温度センサー)');
+    console.log('- POST /webhook/pressure (気圧センサー)');
+    console.log('- POST /webhook/scheduled (定時データ)');
+    console.log('- POST /webhook/general (汎用)');
+    console.log('- GET /webhook/health (ヘルスチェック)');
+
+    // サーバー起動後にスケジューラーを開始
+});
+
+
 async function main() {
     try {
         // WebSocket接続
@@ -590,7 +744,7 @@ async function main() {
         schedule.scheduleJob({scheduleOptions, rule: '30 11 * * *'}, () => multi_feed_v2('https://gourmet.watch.impress.co.jp/data/rss/1.0/grw/feed.rdf'));
         schedule.scheduleJob({scheduleOptions, rule: '0 12 * * *'}, () => multi_feed_v2('https://gigazine.net/news/rss_2.0/'));
         schedule.scheduleJob({scheduleOptions, rule: '0 13 * * *'}, () => python_connect('/generate/text'));
-        schedule.scheduleJob({scheduleOptions, rule: '0 14 * * *'}, () => multi_feed_v2('https://nazology.kusuguru.co.jp/feed'));
+        schedule.scheduleJob({scheduleOptions, rule: '0 14 * * *'}, () => multi_feed_v2('https://sorae.info/feed'));
         schedule.scheduleJob({scheduleOptions, rule: '0 15 * * *'}, () => python_connect('/generate/text'));
         schedule.scheduleJob({scheduleOptions, rule: '0 16 * * *'}, () => multi_feed_v2('https://www.publickey1.jp/atom.xml'));
         schedule.scheduleJob({scheduleOptions, rule: '0 17 * * *'}, () => python_connect('/generate/text'));
@@ -613,6 +767,7 @@ async function main() {
         schedule.scheduleJob('0 3 * * *', async () => {const result = await executeMaintenance();});
         // await test('https://gourmet.watch.impress.co.jp/data/rss/1.0/grw/feed.rdf')
 
+
         // 本番運用ではDMを送信する。sendDM("なんか起動したみたいですよ");
 
         
@@ -625,9 +780,11 @@ async function main() {
             console.log('Scraping failed');
             await writeLog('error', 'main', `Scraping failed`, null, null);
         }
-        console.log("起動しました");
+
+
+        console.log("起動しました（ウェブフック受信機能付き）");
         //await multi_feed_v2('https://trafficnews.jp/feed');
-        await writeLog('info', 'main', `起動しました`, null, null);
+        await writeLog('info', 'main', `起動しました（ウェブフック受信機能付き）- ポート${port}で待機中`, null, null);
     } catch (error) {
         const error_message = `エラーが発生しました: ${error.message}`;
         console.error(error_message);

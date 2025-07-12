@@ -30,6 +30,12 @@ async function resetHeatCounter() {
         await updateMultiKVoperation('protection', '0', 'air_reply_heat');
         const info_message4 = ('air_reply_heatカウンターを0にリセットしました');
         await writeLog('info', 'resetHeatCounter', info_message4, null, null);
+        await updateMultiKVoperation('protection', '0', 'environmental_heat');
+        const info_message5 = ('environmental_heatカウンターを0にリセットしました');
+        await writeLog('info', 'resetHeatCounter', info_message5, null, null);
+        await updateMultiKVoperation('protection', '0', 'earthquake_heat');
+        const info_message6 = ('earthquake_heatカウンターを0にリセットしました');
+        await writeLog('info', 'resetHeatCounter', info_message6, null, null);
 
     }
     catch (error) {

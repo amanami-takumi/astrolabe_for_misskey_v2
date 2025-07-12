@@ -174,7 +174,7 @@ class TextProcessor:
 
             text_model = markovify.NewlineText(
                 combined_text,
-                state_size=2,
+                state_size=3,
                 retain_original=False
             )
 
