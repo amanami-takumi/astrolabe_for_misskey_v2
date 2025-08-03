@@ -64,7 +64,7 @@ async function handleEarthquakeNotification(data) {
         await updateMultiKVoperation('protection', updated_earthquake_heat, 'earthquake_heat');
 
         // 投稿間隔チェック (10分)
-        const last_post_time_str = await getMultiKVoperation('protection', 'last_earthquake_post_time');
+        const last_post_time_str = await getMultiKVoperation('memorandum', 'last_earthquake_post_time');
         if (last_post_time_str) {
             const last_post_time = new Date(last_post_time_str);
             const now = new Date();
@@ -86,7 +86,7 @@ async function handleEarthquakeNotification(data) {
             const result = await createNote(message);
             await writeLog('info', 'earthquake_notification', 'Misskeyに投稿しました', result, null);
             // 最終投稿時間を更新
-            await updateMultiKVoperation('protection', new Date().toISOString(), 'last_earthquake_post_time');
+            await updateMultiKVoperation('memorandum', new Date().toISOString(), 'last_earthquake_post_time');
         } else {
             message = `📊 地震観測データ\n\n`;
         }
