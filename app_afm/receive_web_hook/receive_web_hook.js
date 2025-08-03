@@ -63,7 +63,17 @@ async function handleEarthquakeNotification(data) {
         let updated_earthquake_heat = Number(now_earthquake_heat) + 1;
         await updateMultiKVoperation('protection', updated_earthquake_heat, 'earthquake_heat');
 
-
+        // 投稿間隔チェック (10分)
+        const last_post_time_str = await getMultiKVoperation('protection', 'last_earthquake_post_time');
+        if (last_post_time_str) {
+            const last_post_time = new Date(last_post_time_str);
+            const now = new Date();
+            const diff_minutes = (now - last_post_time) / (1000 * 60);
+            if (diff_minutes < 10) {
+                await writeLog('info', 'earthquake_notification_skipped', '投稿間隔が10分未満のためスキップしました', null, null);
+                return;
+            }
+        }
 
         // 緊急度に応じたメッセージの作成
         let message = '';
@@ -75,6 +85,8 @@ async function handleEarthquakeNotification(data) {
             message += `これは震度${JMA_scale}くらいでしょうか`;
             const result = await createNote(message);
             await writeLog('info', 'earthquake_notification', 'Misskeyに投稿しました', result, null);
+            // 最終投稿時間を更新
+            await updateMultiKVoperation('protection', new Date().toISOString(), 'last_earthquake_post_time');
         } else {
             message = `📊 地震観測データ\n\n`;
         }

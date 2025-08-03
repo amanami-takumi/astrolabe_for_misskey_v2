@@ -160,11 +160,14 @@ async function multi_feed_v2(FeedURL) {
         // スクレイピング結果のタイトルを優先し、なければフィード情報、それもなければ固定文字列
         const selectedArticleInFeed = News.find(article => article.link === randomLink);
         const articleTitle = scrapingResult.title || (selectedArticleInFeed ? selectedArticleInFeed.title : "タイトル不明");
+        // articleTitleから「facebookhatebuPocket」と「ホームlogin」を除去、「GIGAZINEGIGAZINE」を「GIGAZINE」に置換
+        let cleanedTitle = articleTitle.replace(/facebookhatebuPocket/g, '').replace(/ホームlogin/g, '').replace(/GIGAZINEGIGAZINE/g, 'GIGAZINE').trim();
+
         news_comment = news_comment.replace(/。$/, ' ').trim(); // 。を削除する。
         news_comment = news_comment.replace(/「|」/g, '').trim(); // 「」の記号だけを削除し、内容は保持する
         news_comment = news_comment.replace(/“.*?”/g, ' ').trim(); // ”を削除する。
         news_comment = news_comment.replace(/！.*?/g, ' ').trim(); // ！を削除する。
-        const message = `${news_comment}らしい。\n\n${articleTitle}\n${randomLink}`;
+        const message = `${news_comment}らしい。\n\n${cleanedTitle}\n${randomLink}`;
         const result = await createNote(message);
 
     } catch (error) {

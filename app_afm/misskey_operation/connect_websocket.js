@@ -144,6 +144,7 @@ function createHybridWebSocket(wsUrl) {
                     // メッセージタイプに基づいて処理を分岐
                     if (message.type === 'channel' && message.body.type === 'note') {
                         const note = message.body.body;
+                        console.log(`受信したノート: ${note}`);
                         handleNote(note);
                     }
 

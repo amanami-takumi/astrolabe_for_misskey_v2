@@ -10,7 +10,7 @@ services:
       - ./.env:/usr/src/app_afm/.env
       - ./penetration:/penetration
     command: sh -c "npm install && npm run start"
-    restart: unless-stopped
+    restart: always
     ports:
       - "15001:5000"
     environment:
@@ -30,7 +30,7 @@ services:
       - ./.env:/usr/src/python_afm/.env
       - ./penetration:/penetration
     command: sh -c "pip install -r requirements.txt && python main.py"
-    restart: unless-stopped
+    restart: always
     ports:
       - "15002:3000"
     environment:
@@ -51,7 +51,7 @@ services:
       - ./postgres/postgres-init/check-and-init.sh:/docker-entrypoint-initdb.d/check-and-init.sh
       - ./db_data:/var/lib/postgresql/data
       - ./penetration:/penetration
-    restart: unless-stopped
+    restart: always
     ports:
       - "15433:5432"
     networks:

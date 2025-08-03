@@ -85,22 +85,27 @@ async function createMisskeyNote(token, {
         "Content-Type": "application/json"
     };
 
-    // 禁止ワードの取得と置換処理
+    
     try {
-        const forbiddenWords = await getMultiKVoperation('note_text', 'forbidden');
+        // テキストの前処理
+        
         let processedText = text;
         
-        if (forbiddenWords && Array.isArray(forbiddenWords)) {
-            forbiddenWords.forEach(word => {
-                const stars = '＊'.repeat(word.length);
-                const regex = new RegExp(word, 'g');
-                if (regex.test(processedText)) {
-                    const info_message = `禁止ワード「${word}」を検出し、置換しました`;
-                    writeLog('info', 'createMisskeyNote', info_message, null, null);
-                }
-                processedText = processedText.replace(regex, stars);
-            });
-        }
+    // 禁止ワードの取得と置換処理    
+    //    const forbiddenWords = await getMultiKVoperation('note_text', 'forbidden');
+    
+    //    
+    //    if (forbiddenWords && Array.isArray(forbiddenWords)) {
+    //        forbiddenWords.forEach(word => {
+    //            const stars = '＊'.repeat(word.length);
+    //            const regex = new RegExp(word, 'g');
+    //            if (regex.test(processedText)) {
+    //                const info_message = `禁止ワード「${word}」を検出し、置換しました`;
+    //                writeLog('info', 'createMisskeyNote', info_message, null, null);
+    //            }
+    //            processedText = processedText.replace(regex, stars);
+    //        });
+    //    }
 
         const payload = {
             visibility,
