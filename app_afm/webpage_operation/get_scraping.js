@@ -132,6 +132,7 @@ async function getScraping(url, useSelenium = false) {
             }
         });
         const html = response.data;
+        await writeLog('info', 'getScraping', `Debug:${html}`, null, null);
         const $ = load(html);
 
         // ページタイトルを取得
@@ -249,15 +250,42 @@ function removeUnwantedElements($) {
         '[class*="social"]',
         '[class*="Social"]'
     ];
+
+    const preserveRoots = ['#contents-section-1'];
+    const shouldPreserve = (element) => {
+        const $element = $(element);
+        return preserveRoots.some(selector => $element.closest(selector).length > 0);
+    };
     
     // 要素を削除
     elementsToRemove.forEach(element => {
-        $(element).remove();
+        $(element).each((_, el) => {
+            if (shouldPreserve(el)) return;
+            $(el).remove();
+        });
     });
     
     // パターンを削除
     patternsToRemove.forEach(pattern => {
-        $(pattern).remove();
+        $(pattern).each((_, el) => {
+            if (shouldPreserve(el)) return;
+            $(el).remove();
+        });
+    });
+
+    const phrasesToRemove = [
+        '読者の皆さま',
+        'ご寄付いただけないでしょうか',
+        '支援をお願いします'
+    ];
+
+    $('body *').each((_, el) => {
+        if (shouldPreserve(el)) return;
+        const text = $(el).text();
+        if (!text) return;
+        if (phrasesToRemove.some(phrase => text.includes(phrase))) {
+            $(el).remove();
+        }
     });
 }
 

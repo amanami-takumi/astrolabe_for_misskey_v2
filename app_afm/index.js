@@ -239,6 +239,112 @@ async function python_connect(endpoint) {
     }
 }
 
+
+async function python_connect_pressure_plot_direct() {
+    if (Math.floor(Math.random() * 5) === 0){
+        await python_connect_pressure_plot('/generate/pressure_plot')
+    }
+}
+async function python_connect_pressure_plot(endpoint) {
+    // 0-20分のランダムな待機時間を設定
+    await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 20) * 60 * 1000));
+
+    try {
+        const response = await axios.get(`http://python-afm:3000${endpoint}`, {
+            responseType: 'arraybuffer'  // バイナリデータとして受け取る
+        });
+        
+        if (response.data) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '');
+            const filename = `pressure_plot_${timestamp}.png`;
+            
+            // ファイルをMisskeyにアップロード
+            const fileId = await uploadMisskeyFile(
+                response.data,
+                filename,
+                'image/png'
+            );
+
+            if (fileId) {
+                const message = `気圧グラフ_テスト`;
+                await createNoteWithMedia(message, [fileId]);
+                
+                const info_message = 'PressurePlotを投稿';
+                await writeLog('info', 'python_connect_Pressure_Plot', info_message, null, null);
+            } else {
+                throw new Error('ファイルのアップロードに失敗しました');
+            }
+        } else {
+            throw new Error('画像データが見つかりません');
+        }
+    } catch (error) {
+        const error_message = `Pressure_plot生成エラー: ${error.message}`;
+        await writeLog('error', 'python_connect_Pressure_Plot', error_message, null, null);
+        console.error(error_message);
+    }
+}
+
+async function python_connect_temperature_plot(endpoint) {
+    try {
+        const response = await axios.get(`http://python-afm:3000${endpoint}`, {
+            responseType: 'arraybuffer'  // バイナリデータとして受け取る
+        });
+        
+        if (response.data) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '');
+            const filename = `temperature_plot_${timestamp}.png`;
+            
+            // ファイルをMisskeyにアップロード
+            const fileId = await uploadMisskeyFile(
+                response.data,
+                filename,
+                'image/png'
+            );
+
+            if (fileId) {
+                const message = `気温グラフ_テスト`;
+                await createNoteWithMedia(message, [fileId]);
+                
+                const info_message = 'TemperaturePlotを投稿';
+                await writeLog('info', 'python_connect_Temperature_Plot', info_message, null, null);
+            } else {
+                throw new Error('ファイルのアップロードに失敗しました');
+            }
+        } else {
+            throw new Error('画像データが見つかりません');
+        }
+    } catch (error) {
+        const error_message = `TemperaturePlot生成エラー: ${error.message}`;
+        await writeLog('error', 'python_connect_Temperature_Plot', error_message, null, null);
+        console.error(error_message);
+    }
+}
+
+async function python_connect_pressure_alert(endpoint) {
+    await writeLog('info', 'python_connect_Pressure_Alert', 'python_connect_Pressure_Alertが呼び出されました', null, null);
+    try {
+        const response = await axios.get(`http://python-afm:3000${endpoint}`);
+        if (response.status == 200){
+
+            const message = String(response.data.message)
+            await writeLog('info', 'python_connect_Pressure_Alert', typeof(message), null, null);
+            await writeLog('info', 'python_connect_Pressure_Alert', message, null, null);
+            const misskey_note = await createNote(message);
+
+        } else if (response.status == 204) {
+            await writeLog('info', 'python_connect_Pressure_Alert', 'アラート要件に到達しませんでした', null, null);
+        } else {
+            await writeLog('info', 'python_connect_Pressure_Alert', 'Pythonサーバサイドでエラーが生じています', null, null);
+            throw new Error('サーバサイドでエラーが生じています');
+        }
+    } catch (error) {
+        const error_message = `PressureAlert生成エラー: ${error.message}\n${response}`;
+        await writeLog('error', 'python_connect_Pressure_Alert', error_message, null, null);
+        console.error(error_message);
+    }
+}
+
+
 async function python_connect_wordcloud(endpoint) {
     try {
         const response = await axios.get(`http://python-afm:3000${endpoint}`, {
@@ -274,6 +380,8 @@ async function python_connect_wordcloud(endpoint) {
         console.error(error_message);
     }
 }
+
+
 
 async function emoji_difference() {
     try {
@@ -744,6 +852,7 @@ async function main() {
         schedule.scheduleJob({scheduleOptions, rule: '0 8 * * *'}, () => python_connect('/generate/text'));
         schedule.scheduleJob({scheduleOptions, rule: '0 9 * * *'}, () => multi_feed_v2('https://trafficnews.jp/feed'));
         schedule.scheduleJob({scheduleOptions, rule: '0 10 * * *'}, () => python_connect('/generate/text'));
+        schedule.scheduleJob({scheduleOptions, rule: '0 11 * * *'}, () => python_connect_pressure_alert('/generate/pressure_alert'));
         schedule.scheduleJob({scheduleOptions, rule: '30 11 * * *'}, () => multi_feed_v2('https://gourmet.watch.impress.co.jp/data/rss/1.0/grw/feed.rdf'));
         schedule.scheduleJob({scheduleOptions, rule: '0 12 * * *'}, () => multi_feed_v2('https://gigazine.net/news/rss_2.0/'));
         schedule.scheduleJob({scheduleOptions, rule: '0 13 * * *'}, () => python_connect('/generate/text'));
@@ -754,6 +863,7 @@ async function main() {
         schedule.scheduleJob({scheduleOptions, rule: '0 18 * * *'}, () => multi_feed_v2('https://www.gamespark.jp/rss20/index.rdf'));
         schedule.scheduleJob({scheduleOptions, rule: '30 18 * * *'}, bathing);
         schedule.scheduleJob({scheduleOptions, rule: '0 19 * * *'}, think_Dinner);
+        schedule.scheduleJob({scheduleOptions, rule: '0 20 * * *'}, python_connect_pressure_plot_direct);
         schedule.scheduleJob({scheduleOptions, rule: '0 20 * * *'}, () => python_connect_wordcloud('/generate/wordcloud'));
         schedule.scheduleJob({scheduleOptions, rule: '30 20 * * *'}, () => python_connect('/generate/text'));
         schedule.scheduleJob({scheduleOptions, rule: '0 21 * * *'}, () => multi_feed_v2('https://automaton-media.com/feed/'));
@@ -763,14 +873,16 @@ async function main() {
         // WebSocketの状態を毎日23時にチェック
         schedule.scheduleJob({scheduleOptions, rule: '0 23 * * *'}, checkWebSocketConnections);
         
+        
         // schedule.scheduleJob({scheduleOptions, rule: '20 23 * * *'}, () => test('test'));
         // python_connect_wordcloud('/generate/wordcloud')
         // 毎日3時にheatカウンターをリセット
         // test(`/generate/text`);
         schedule.scheduleJob('0 3 * * *', async () => {const result = await executeMaintenance();});
         // await test('https://gourmet.watch.impress.co.jp/data/rss/1.0/grw/feed.rdf')
-
-
+        // await python_connect_pressure_plot('/generate/pressure_plot')
+        // await python_connect_temperature_plot('/generate/temperature_plot')
+        // await python_connect_pressure_alert('/generate/pressure_alert')
         // 本番運用ではDMを送信する。sendDM("なんか起動したみたいですよ");
 
         

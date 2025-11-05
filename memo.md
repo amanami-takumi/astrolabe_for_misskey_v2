@@ -9,10 +9,8 @@ chmod -R 777 penetration
 
 
 
-git add . && git commit -m "
-- RSSのクリーニング処理を改善
-- 禁止ワードの伏せ字処理を削除
-- 震度計測で連投が生じる状態を修正
+git add . && git commit -m "\
+- 震度計測における連投防止処理のテーブル名を修正
 " && git push -u origin development
 
 エアリプOllama処理はスキップされました null {
