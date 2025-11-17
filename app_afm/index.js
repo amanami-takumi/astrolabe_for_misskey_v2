@@ -241,7 +241,9 @@ async function python_connect(endpoint) {
 
 
 async function python_connect_pressure_plot_direct() {
-    if (Math.floor(Math.random() * 5) === 0){
+    const pressure_random = Math.floor(Math.random() * 5);
+    await writeLog('info', 'python_connect_pressure_plot_direct', `Pressure random value: ${pressure_random}`, null, null);
+    if (pressure_random === 0){
         await python_connect_pressure_plot('/generate/pressure_plot')
     }
 }
@@ -323,13 +325,23 @@ async function python_connect_temperature_plot(endpoint) {
 async function python_connect_pressure_alert(endpoint) {
     await writeLog('info', 'python_connect_Pressure_Alert', 'python_connect_Pressure_Alertが呼び出されました', null, null);
     try {
-        const response = await axios.get(`http://python-afm:3000${endpoint}`);
-        if (response.status == 200){
+        const response = await axios.get(`http://python-afm:3000${endpoint}`, {
+            responseType: 'text'
+        });
+        if (response.status === 200) {
+            const rawData = response.data;
+            const message = typeof rawData === 'string'
+                ? rawData.trim()
+                : String(rawData?.message ?? '').trim();
 
-            const message = String(response.data.message)
-            await writeLog('info', 'python_connect_Pressure_Alert', typeof(message), null, null);
+            if (!message) {
+                await writeLog('warn', 'python_connect_Pressure_Alert', '圧力アラートのメッセージが空文字でした', null, null);
+                return;
+            }
+
+            await writeLog('info', 'python_connect_Pressure_Alert', `message type: ${typeof message}`, null, null);
             await writeLog('info', 'python_connect_Pressure_Alert', message, null, null);
-            const misskey_note = await createNote(message);
+            await createNote(message);
 
         } else if (response.status == 204) {
             await writeLog('info', 'python_connect_Pressure_Alert', 'アラート要件に到達しませんでした', null, null);
@@ -338,9 +350,11 @@ async function python_connect_pressure_alert(endpoint) {
             throw new Error('サーバサイドでエラーが生じています');
         }
     } catch (error) {
-        const error_message = `PressureAlert生成エラー: ${error.message}\n${response}`;
-        await writeLog('error', 'python_connect_Pressure_Alert', error_message, null, null);
-        console.error(error_message);
+        const status = error.response?.status;
+        const responseData = error.response?.data;
+        const error_message = `PressureAlert生成エラー: ${error.message}${status ? ` (status: ${status})` : ''}`;
+        await writeLog('error', 'python_connect_Pressure_Alert', error_message, null, typeof responseData === 'string' ? responseData : JSON.stringify(responseData ?? {}));
+        console.error(error_message, error);
     }
 }
 
@@ -882,7 +896,7 @@ async function main() {
         // await test('https://gourmet.watch.impress.co.jp/data/rss/1.0/grw/feed.rdf')
         // await python_connect_pressure_plot('/generate/pressure_plot')
         // await python_connect_temperature_plot('/generate/temperature_plot')
-        // await python_connect_pressure_alert('/generate/pressure_alert')
+        //  await python_connect_pressure_alert('/generate/pressure_alert')
         // 本番運用ではDMを送信する。sendDM("なんか起動したみたいですよ");
 
         
