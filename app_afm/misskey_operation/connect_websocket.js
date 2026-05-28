@@ -71,34 +71,33 @@ async function safelyCloseWebSocket(ws) {
     });
 }
 
-function connectWebSocket_hybrid() {
+async function connectWebSocket_hybrid() {
+    const wsHost = MISSKEY_URL.replace('https://', '');
+    const wsUrl = `wss://${wsHost}/streaming?i=${MISSKEY_TOKEN}`;
+
     try {
-        const wsHost = MISSKEY_URL.replace('https://', '');
-        const wsUrl = `wss://${wsHost}/streaming?i=${MISSKEY_TOKEN}`;
-        
-        // 既存の接続があれば切断
         if (currentWs_hybrid && currentWs_hybrid.readyState !== WebSocket.CLOSED) {
             console.log("既存のhybrid WebSocket接続を切断します...");
-            return safelyCloseWebSocket(currentWs_hybrid)
-                .then(() => {
-                    console.log("既存のhybrid WebSocket接続を切断しました、新たに接続を確立します");
-                    return createHybridWebSocket(wsUrl);
-                });
-        } else {
-            return createHybridWebSocket(wsUrl);
+            await safelyCloseWebSocket(currentWs_hybrid);
+            console.log("既存のhybrid WebSocket接続を切断しました、新たに接続を確立します");
         }
+
+        return await createHybridWebSocket(wsUrl);
     } catch (error) {
-        writeLog('error', 'connectWebSocket_hybrid', `接続試行中に例外が発生: ${error.message || error}`, null, null);
-        
-        // 接続試行エラー後の再試行
-        const retryDelay = retryCount_hybrid >= 12 ? 3600000 : 5000 * Math.pow(1.5, retryCount_hybrid);
-        return new Promise(resolve => {
-            setTimeout(() => {
-                console.log('WebSocket_hybridの再接続を試みます...');
-                retryCount_hybrid++;
-                resolve(connectWebSocket_hybrid());
-            }, retryDelay);
-        });
+        const isMaintenance = error && typeof error.message === 'string' && error.message.includes('Unexpected server response: 502');
+        const baseDelay = isMaintenance ? 60000 : 5000;
+        const retryDelay = retryCount_hybrid >= 12 ? 3600000 : baseDelay * Math.pow(1.5, retryCount_hybrid || 0);
+        retryCount_hybrid++;
+
+        const logMessage = isMaintenance
+            ? `メンテナンス中の可能性があります (HTTP 502)。${Math.round(retryDelay / 1000)}秒後に再試行します。`
+            : `接続試行中に例外が発生: ${error && error.message ? error.message : error}. ${Math.round(retryDelay / 1000)}秒後に再試行します。`;
+
+        await writeLog(isMaintenance ? 'info' : 'error', 'connectWebSocket_hybrid', logMessage, null, null);
+        console.warn(`hybrid WebSocket接続エラー。${Math.round(retryDelay / 1000)}秒後に再試行します。`, error);
+
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        return connectWebSocket_hybrid();
     }
 }
 
@@ -243,34 +242,33 @@ function createHybridWebSocket(wsUrl) {
     });
 }
 
-function connectWebSocket_global() {
+async function connectWebSocket_global() {
+    const wsHost = MISSKEY_URL.replace('https://', '');
+    const wsUrl = `wss://${wsHost}/streaming?i=${MISSKEY_TOKEN}`;
+
     try {
-        const wsHost = MISSKEY_URL.replace('https://', '');
-        const wsUrl = `wss://${wsHost}/streaming?i=${MISSKEY_TOKEN}`;
-        
-        // 既存の接続があれば切断
         if (currentWs_global && currentWs_global.readyState !== WebSocket.CLOSED) {
             console.log("既存のglobal WebSocket接続を切断します...");
-            return safelyCloseWebSocket(currentWs_global)
-                .then(() => {
-                    console.log("既存のglobal WebSocket接続を切断しました、新たに接続を確立します");
-                    return createGlobalWebSocket(wsUrl);
-                });
-        } else {
-            return createGlobalWebSocket(wsUrl);
+            await safelyCloseWebSocket(currentWs_global);
+            console.log("既存のglobal WebSocket接続を切断しました、新たに接続を確立します");
         }
+
+        return await createGlobalWebSocket(wsUrl);
     } catch (error) {
-        writeLog('error', 'connectWebSocket_global', `接続試行中に例外が発生: ${error.message || error}`, null, null);
-        
-        // 接続試行エラー後の再試行
-        const retryDelay = retryCount_global >= 12 ? 3600000 : 5000 * Math.pow(1.5, retryCount_global);
-        return new Promise(resolve => {
-            setTimeout(() => {
-                console.log('WebSocket_globalの再接続を試みます...');
-                retryCount_global++;
-                resolve(connectWebSocket_global());
-            }, retryDelay);
-        });
+        const isMaintenance = error && typeof error.message === 'string' && error.message.includes('Unexpected server response: 502');
+        const baseDelay = isMaintenance ? 60000 : 5000;
+        const retryDelay = retryCount_global >= 12 ? 3600000 : baseDelay * Math.pow(1.5, retryCount_global || 0);
+        retryCount_global++;
+
+        const logMessage = isMaintenance
+            ? `メンテナンス中の可能性があります (HTTP 502)。${Math.round(retryDelay / 1000)}秒後に再試行します。`
+            : `接続試行中に例外が発生: ${error && error.message ? error.message : error}. ${Math.round(retryDelay / 1000)}秒後に再試行します。`;
+
+        await writeLog(isMaintenance ? 'info' : 'error', 'connectWebSocket_global', logMessage, null, null);
+        console.warn(`global WebSocket接続エラー。${Math.round(retryDelay / 1000)}秒後に再試行します。`, error);
+
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        return connectWebSocket_global();
     }
 }
 
@@ -378,34 +376,33 @@ function createGlobalWebSocket(wsUrl) {
     });
 }
 
-function connectWebSocket_main() {
+async function connectWebSocket_main() {
+    const wsHost = MISSKEY_URL.replace('https://', '');
+    const wsUrl = `wss://${wsHost}/streaming?i=${MISSKEY_TOKEN}`;
+
     try {
-        const wsHost = MISSKEY_URL.replace('https://', '');
-        const wsUrl = `wss://${wsHost}/streaming?i=${MISSKEY_TOKEN}`;
-        
-        // 既存の接続があれば切断
         if (currentWs_main && currentWs_main.readyState !== WebSocket.CLOSED) {
             console.log("既存のmain WebSocket接続を切断します...");
-            return safelyCloseWebSocket(currentWs_main)
-                .then(() => {
-                    console.log("既存のmain WebSocket接続を切断しました、新たに接続を確立します");
-                    return createMainWebSocket(wsUrl);
-                });
-        } else {
-            return createMainWebSocket(wsUrl);
+            await safelyCloseWebSocket(currentWs_main);
+            console.log("既存のmain WebSocket接続を切断しました、新たに接続を確立します");
         }
+
+        return await createMainWebSocket(wsUrl);
     } catch (error) {
-        writeLog('error', 'connectWebSocket_main', `接続試行中に例外が発生: ${error.message || error}`, null, null);
-        
-        // 接続試行エラー後の再試行
-        const retryDelay = retryCount_main >= 12 ? 3600000 : 5000 * Math.pow(1.5, retryCount_main);
-        return new Promise(resolve => {
-            setTimeout(() => {
-                console.log('WebSocket_mainの再接続を試みます...');
-                retryCount_main++;
-                resolve(connectWebSocket_main());
-            }, retryDelay);
-        });
+        const isMaintenance = error && typeof error.message === 'string' && error.message.includes('Unexpected server response: 502');
+        const baseDelay = isMaintenance ? 60000 : 5000;
+        const retryDelay = retryCount_main >= 12 ? 3600000 : baseDelay * Math.pow(1.5, retryCount_main || 0);
+        retryCount_main++;
+
+        const logMessage = isMaintenance
+            ? `メンテナンス中の可能性があります (HTTP 502)。${Math.round(retryDelay / 1000)}秒後に再試行します。`
+            : `接続試行中に例外が発生: ${error && error.message ? error.message : error}. ${Math.round(retryDelay / 1000)}秒後に再試行します。`;
+
+        await writeLog(isMaintenance ? 'info' : 'error', 'connectWebSocket_main', logMessage, null, null);
+        console.warn(`main WebSocket接続エラー。${Math.round(retryDelay / 1000)}秒後に再試行します。`, error);
+
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        return connectWebSocket_main();
     }
 }
 

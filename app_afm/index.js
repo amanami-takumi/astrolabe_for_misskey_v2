@@ -35,6 +35,41 @@ const scheduleOptions = {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 let noteText;
 
+function normalizeFeedLinks(rawValue) {
+    if (!rawValue) {
+        return [];
+    }
+    if (Array.isArray(rawValue)) {
+        return rawValue.filter(link => typeof link === 'string' && link.trim().length > 0);
+    }
+    if (typeof rawValue === 'string') {
+        const trimmed = rawValue.trim();
+        if (!trimmed) {
+            return [];
+        }
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed)) {
+                    return parsed.filter(link => typeof link === 'string' && link.trim().length > 0);
+                }
+            } catch (error) {
+                // JSON形式でなければ後続の処理にフォールバック
+            }
+        }
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+            const matches = [...trimmed.matchAll(/"([^"]*?)"/g)];
+            if (matches.length > 0) {
+                return matches.map(match => match[1]).filter(link => link && link.trim().length > 0);
+            }
+            const inner = trimmed.slice(1, -1);
+            return inner.split(',').map(item => item.replace(/(^"|"$)/g, '').trim()).filter(Boolean);
+        }
+        return trimmed.split(',').map(item => item.replace(/(^"|"$)/g, '').trim()).filter(Boolean);
+    }
+    return [];
+}
+
 
 
 
@@ -90,7 +125,7 @@ async function night_greeting() {
 async function multi_feed_v2(FeedURL) {
     try {
         // 0-30分のランダムな待機時間を設定
-        await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 31) * 60 * 1000));
+        // await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 31) * 60 * 1000));
         const News = await getMultiFeed_v2(FeedURL);
         //console.log(News);
 
@@ -103,15 +138,19 @@ async function multi_feed_v2(FeedURL) {
         }
 
         // DBに保存されている前回分のFeedリンクを取得
-        let old_feed_links = await getMultiMemorandum(FeedURL); // URL文字列の配列を期待
-        if (!Array.isArray(old_feed_links)) {
-            old_feed_links = []; // nullまたは未定義の場合は空の配列で初期化
-        }
-        
+        const old_feed_raw = await getMultiKVoperation('memorandum', FeedURL);
+        const old_feed_links = normalizeFeedLinks(old_feed_raw); // URL文字列の配列に正規化
+
         // 前回のリンクと最新のリンクを比較し、差分を取得する。
         // News は {link: string, title: string, ...} のようなオブジェクトの配列と仮定
-        const new_feed_links = News.map(item => item.link); // URL文字列の配列
+        const new_feed_links = [...new Set(
+        News.map(item => item.link)
+            .filter(link => typeof link === 'string' && link.trim().length > 0)
+        )];
         const added_links = new_feed_links.filter(link => !old_feed_links.includes(link));
+        await writeLog('info', 'multi_feed_v2', `【DEBUG】古いリンク: ${old_feed_links}`, null, null);
+        await writeLog('info', 'multi_feed_v2', `【DEBUG】新しいリンク: ${new_feed_links}`, null, null);
+        await writeLog('info', 'multi_feed_v2', `【DEBUG】差分リンク: ${added_links}`, null, null);
         // const removed_links = old_feed_links.filter(link => !new_feed_links.includes(link)); // removed_links は現在未使用
 
         // 追加されたリンクがない場合は処理を終了
@@ -193,14 +232,14 @@ async function multi_feed(FeedURL) {
 
         const news_comment = await getRandomNoteText(`feed_text`);
         // debug用 console.log(News);
-        const FeedResult = await getMultiMemorandum(FeedURL);
+        const FeedResult = await getMultiKVoperation('memorandum', FeedURL);
         if (FeedResult == News[0].link) {
             const FeedName = FeedURL.replace('https://', '').replace('.com', '').replace('.jp', '').replace('.co.jp', '').replace('/feed', '');
             const info_message = `Feed(${FeedName})は前回の実行から更新されていません`;
             await writeLog('info', 'multi_feed', info_message, null, null);
             return;
         }
-        await updateMultiMemorandum(FeedURL, `${News[0].link}`);
+        await updateMultiKVoperation('memorandum', FeedURL, `${News[0].link}`);
         
         const FeedName = FeedURL.replace('https://', '').replace('.com', '').replace('.jp', '').replace('.co.jp', '').replace('/feed', '');
         const info_message = `Feed(${FeedName})の投稿を実行`;
@@ -241,7 +280,7 @@ async function python_connect(endpoint) {
 
 
 async function python_connect_pressure_plot_direct() {
-    const pressure_random = Math.floor(Math.random() * 5);
+    const pressure_random = Math.floor(Math.random() * 3);
     await writeLog('info', 'python_connect_pressure_plot_direct', `Pressure random value: ${pressure_random}`, null, null);
     if (pressure_random === 0){
         await python_connect_pressure_plot('/generate/pressure_plot')
@@ -268,7 +307,7 @@ async function python_connect_pressure_plot(endpoint) {
             );
 
             if (fileId) {
-                const message = `気圧グラフ_テスト`;
+                const message = `直近24時間の気圧グラフが描けました！`;
                 await createNoteWithMedia(message, [fileId]);
                 
                 const info_message = 'PressurePlotを投稿';
@@ -304,7 +343,7 @@ async function python_connect_temperature_plot(endpoint) {
             );
 
             if (fileId) {
-                const message = `気温グラフ_テスト`;
+                const message = `直近24時間の気温グラフが描けました！`;
                 await createNoteWithMedia(message, [fileId]);
                 
                 const info_message = 'TemperaturePlotを投稿';
@@ -886,7 +925,9 @@ async function main() {
         
         // WebSocketの状態を毎日23時にチェック
         schedule.scheduleJob({scheduleOptions, rule: '0 23 * * *'}, checkWebSocketConnections);
-        
+
+        const scrapingResult = await getScraping(`https://sorae.info/astronomy/20251124-arp-273.html`, true); // { title, mainContent } を期待
+        console.log('Initial scraping result:', scrapingResult);
         
         // schedule.scheduleJob({scheduleOptions, rule: '20 23 * * *'}, () => test('test'));
         // python_connect_wordcloud('/generate/wordcloud')
@@ -899,7 +940,7 @@ async function main() {
         //  await python_connect_pressure_alert('/generate/pressure_alert')
         // 本番運用ではDMを送信する。sendDM("なんか起動したみたいですよ");
 
-        
+        //await multi_feed_v2('https://sorae.info/feed')
         //const renote_result = await createMisskeyRenote(`a8u4ldhsw3`)
         //const scrapingResult = await getScraping(`https://gigazine.net/news/20250613-nvidia-tensorrt/`, true); // { title, mainContent } を期待
         if (scrapingResult) {

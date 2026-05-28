@@ -19,7 +19,7 @@ class TextProcessor:
         # ストップワードのリストを追加
         self.stop_words = self._get_stop_words()
         # 中国語特有の文字リストを追加
-        self.chinese_chars = ['读', '难', '书', '说', '谢', '对', '话', '吗', '吧', '们', '这', '你', '她', '很', '给']
+        self.chinese_chars = ['读', '难', '书', '说', '谢', '对', '话', '吗', '吧', '们', '这', '你', '她', '很', '给', 'ή', 'ξ', 'ά', 'ί']
         
     def get_texts_from_db(self):
         try:
@@ -171,10 +171,10 @@ class TextProcessor:
             combined_text = '\n'.join(processed_texts)
             if not combined_text.strip():
                 raise ValueError("テキストの処理後のデータが空です")
-
+            ## state_sizeが3だと元投稿を再現しすぎるため、妥協して2にする。通報歴あり。
             text_model = markovify.NewlineText(
                 combined_text,
-                state_size=3,
+                state_size=2,
                 retain_original=False
             )
 

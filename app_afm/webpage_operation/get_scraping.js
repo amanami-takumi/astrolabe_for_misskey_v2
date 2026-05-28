@@ -5,98 +5,16 @@ import { load } from 'cheerio';
 import { writeLog } from '../db_operation/create_logs.js';
 import { Builder, By, until } from 'selenium-webdriver';
 import chrome from 'selenium-webdriver/chrome.js';
-import path from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
 
 
 
 config();
 
-// ドライバーのセットアップ状態を追跡
-let driverSetupAttempted = false;
-let driverPath = null;
-
-// Seleniumドライバーを初期化する関数
-async function setupChromeDriver() {
-    // すでにセットアップを試みていて、ドライバーパスが設定されている場合は再利用
-    if (driverSetupAttempted && driverPath) {
-        return driverPath;
-    }
-    
-    // セットアップ試行フラグを設定
-    driverSetupAttempted = true;
-    
-    try {
-        await writeLog('info', 'setupChromeDriver', 'ChromeDriverのセットアップを開始します', null, null);
-        
-        // ChromeDriverの直接パス指定
-        let chromeDriverVersion;
-        try {
-            // webdriver-managerでインストールされているChromeDriverを検索
-            const webdriverDir = '/usr/src/app_afm/node_modules/webdriver-manager/selenium';
-            const files = fs.readdirSync(webdriverDir);
-            
-            // chromedriver_XXXという名前のファイル/ディレクトリを探す
-            const chromedriverFile = files.find(file => file.startsWith('chromedriver_') && !file.endsWith('.zip'));
-            
-            if (chromedriverFile) {
-                const fullPath = path.join(webdriverDir, chromedriverFile);
-                if (fs.existsSync(fullPath)) {
-                    process.env.PATH = `${webdriverDir}:${process.env.PATH}`;
-                    driverPath = fullPath;
-                    await writeLog('info', 'setupChromeDriver', `既存のChromeDriver パスを設定しました: ${fullPath}`, null, null);
-                    return fullPath;
-                }
-            }
-        } catch (err) {
-            await writeLog('error', 'setupChromeDriver', `既存のChromeDriver検索エラー: ${err.message}`, null, null);
-        }
-        
-        // npm経由でインストールされているchromedriverを試す
-        try {
-            const chromedriverPath = require.resolve('chromedriver');
-            if (fs.existsSync(chromedriverPath)) {
-                process.env.PATH = `${path.dirname(chromedriverPath)}:${process.env.PATH}`;
-                driverPath = chromedriverPath;
-                await writeLog('info', 'setupChromeDriver', `npm経由のChromeDriver パスを設定しました: ${chromedriverPath}`, null, null);
-                return chromedriverPath;
-            }
-        } catch (err) {
-            await writeLog('warn', 'setupChromeDriver', `npm経由のChromeDriverが見つかりません: ${err.message}`, null, null);
-        }
-        
-        // webdriver-managerで最新のChromeDriverをインストール
-        try {
-            await writeLog('info', 'setupChromeDriver', 'webdriver-managerで最新のChromeDriverをインストールします', null, null);
-            execSync('npx webdriver-manager update --chrome', { stdio: 'inherit' });
-            
-            // インストールされたドライバーのパスを探す
-            const webdriverDir = '/usr/src/app_afm/node_modules/webdriver-manager/selenium';
-            const files = fs.readdirSync(webdriverDir);
-            
-            // chromedriver_XXXという名前のファイル/ディレクトリを探す
-            const chromedriverFile = files.find(file => file.startsWith('chromedriver_') && !file.endsWith('.zip'));
-            
-            if (chromedriverFile) {
-                const fullPath = path.join(webdriverDir, chromedriverFile);
-                if (fs.existsSync(fullPath)) {
-                    process.env.PATH = `${webdriverDir}:${process.env.PATH}`;
-                    driverPath = fullPath;
-                    await writeLog('info', 'setupChromeDriver', `新規インストールしたChromeDriver パスを設定しました: ${fullPath}`, null, null);
-                    return fullPath;
-                }
-            }
-            
-            throw new Error('ChromeDriverのパスが見つかりません');
-        } catch (err) {
-            await writeLog('error', 'setupChromeDriver', `ChromeDriverのインストールに失敗: ${err.message}`, null, null);
-            throw err;
-        }
-    } catch (error) {
-        await writeLog('error', 'setupChromeDriver', `ChromeDriverのセットアップに失敗: ${error.message}`, null, null);
-        throw error;
-    }
+function chromeExists() {
+    return fs.existsSync('/usr/bin/google-chrome') ||
+        fs.existsSync('/usr/bin/google-chrome-stable') ||
+        fs.existsSync('/opt/google/chrome/google-chrome');
 }
 
 // 通常のHTTPリクエストによるスクレイピング
@@ -105,11 +23,7 @@ async function getScraping(url, useSelenium = false) {
     if (useSelenium) {
         try {
             // Chromeがインストールされているか簡易チェック
-            const chromeExists = fs.existsSync('/usr/bin/google-chrome') || 
-                                fs.existsSync('/usr/bin/google-chrome-stable') || 
-                                fs.existsSync('/opt/google/chrome/google-chrome');
-            
-            if (!chromeExists) {
+            if (!chromeExists()) {
                 await writeLog('warn', 'getScraping', 'Google Chromeがインストールされていないため、非Seleniumモードで続行します', null, null);
                 // Seleniumを使用せず、通常のHTTPリクエストでスクレイピングを行う
                 return getScraping(url, false);
@@ -128,7 +42,7 @@ async function getScraping(url, useSelenium = false) {
         const response = await axios.get(url, {
             headers: {
                 // 一般的なブラウザのユーザーエージェント文字列を設定
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'
             }
         });
         const html = response.data;
@@ -175,12 +89,17 @@ async function getScraping(url, useSelenium = false) {
             // body内の不要な要素を一度削除してからテキスト取得
             $('body').find('header, footer, nav, aside, .sidebar, .widget, .menu, .comments, .comment-section').remove();
             mainContent = $('body').text();
-            await writeLog('info', 'getScraping', 'bodyからコンテンツを抽出しました', null, null);
+            await writeLog('info', 'getScraping', `bodyからコンテンツを抽出しました: ${mainContent}`, null, null);
         }
         
         // テキストを整形（余分な空白や改行を削除）
         mainContent = cleanupText(mainContent);
         mainContent = mainContent.replace(/▼サーバー運営を助ける支援をお願いします ▼サーバー運営を助ける支援をお願いします 900円 私たちは過去最高の大ヒットを記録しているのと裏腹に価格高騰などの影響でサーバー運営が非常に苦しい状態です。打てる手は全て打ちましたが、それでもまだ危機的状況にあります。なので、GIGAZINEの物理的なサーバーたちを、たった1円でも良いので読者の皆さまに支援してもらえればとっても助かります！今すぐ1回払いの寄付は上のボタンから、毎月寄付はこちらのリンク先から！ ・これまでGIGAZINEを支援してくれたメンバーのリスト/g, '');
+        if ((!useSelenium) && shouldRetryWithSelenium(mainContent)) {
+            await writeLog('info', 'getScraping', 'プレースホルダー検知のためSeleniumで再取得します', null, null);
+            return getScraping(url, true);
+        }
+
         if (mainContent || title) {
             await writeLog('info', 'getScraping', `スクレイピング成功: ${url}、コンテンツ長: ${mainContent ? mainContent.length : 0}文字`, null, null);
             return { title, mainContent };
@@ -219,36 +138,15 @@ function removeUnwantedElements($) {
     
     // クラス名やID名のパターン
     const patternsToRemove = [
-        '[class*="ad"]',
-        '[class*="Ad"]',
-        '[class*="AD"]',
-        '[id*="ad"]', 
-        '[id*="Ad"]',
-        '[id*="AD"]',
-        '[class*="sponsor"]',
-        '[class*="Sponsor"]',
-        '[class*="banner"]',
-        '[class*="Banner"]',
-        '[class*="popup"]',
-        '[class*="Popup"]',
-        '[class*="cookie"]',
-        '[class*="Cookie"]',
-        '[class*="sidebar"]',
-        '[class*="Sidebar"]',
-        '.modal', 
-        '#modal',
-        '[class*="modal"]',
-        '[id*="modal"]',
-        '[class*="menu"]',
-        '[class*="Menu"]',
-        '[class*="nav"]',
-        '[class*="Nav"]',
-        '[class*="comment"]',
-        '[class*="Comment"]',
-        '[class*="share"]',
-        '[class*="Share"]',
-        '[class*="social"]',
-        '[class*="Social"]'
+        '.ad', '.ads', '.ads-banner', '.ad-banner', '.ad-container', '.ad-slot',
+        '.advertisement', '.advert', '.sponsor', '.sponsored', '.sponsor-link',
+        '.banner-ad', '.promo-banner', '.popup-ad', '.popup-banner', '.cookie-banner',
+        '.sidebar-ad', '.ad-widget', '.ad-wrapper', '.adbox', '.adunit',
+        '.modal', '#modal', '.modal-overlay', '.popup', '#popup', '.cookie-consent',
+        '[class~="ad"]', '[class~="ads"]', '[class^="ad-"]', '[class$="-ad"]',
+        '[class*=" ad-"]', '[class*="-ad "]',
+        '[id^="ad-"]', '[id$="-ad"]', '#ad', '#ads',
+        '[data-ad]', '[data-advertisement]'
     ];
 
     const preserveRoots = ['#contents-section-1'];
@@ -316,10 +214,13 @@ function cleanupText(text) {
     
     // 複数行に分割して短すぎる行を削除
     const lines = cleanedText.split('\n');
+    const cjkPattern = /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/;
     const filteredLines = lines.filter(line => {
         const trimmedLine = line.trim();
-        // 10文字未満の行や単純なナビゲーション項目と思われる行を削除
-        return trimmedLine.length > 15 || (/^[A-Z0-9 ]+$/.test(trimmedLine) && trimmedLine.length > 5);
+        if (!trimmedLine) return false;
+        if (cjkPattern.test(trimmedLine)) return true;
+        if (trimmedLine.length > 15) return true;
+        return /^[A-Z0-9 ]+$/.test(trimmedLine) && trimmedLine.length > 5;
     });
     
     // 再結合して不要な空白を削除
@@ -337,31 +238,36 @@ function filterUnwantedContent(text) {
     return cleanupText(text);
 }
 
+function shouldRetryWithSelenium(mainContent) {
+    if (!mainContent) return true;
+    const normalized = mainContent.replace(/\s+/g, '');
+    const placeholderPatterns = [
+        /本文\d{0,2}/,
+        /Loading/,
+        /JavaScriptが必要/,
+        /このコンテンツを表示するには/,
+        /しばらくお待ちください/
+    ];
+    if (placeholderPatterns.some(pattern => pattern.test(normalized))) {
+        return true;
+    }
+    if (normalized.length < 80) {
+        return true;
+    }
+    return false;
+}
+
 // Seleniumを使用したスクレイピング
 async function getScrapingWithSelenium(url) {
     let driver = null;
     try {
-        // ChromeDriverのセットアップを実行
-        const driverPath = await setupChromeDriver();
-        
-        if (!driverPath) {
-            throw new Error("ChromeDriverのセットアップに失敗しました");
-        }
-        
         // Chromeが存在するか確認
-        const chromeExists = fs.existsSync('/usr/bin/google-chrome') || 
-                            fs.existsSync('/usr/bin/google-chrome-stable') || 
-                            fs.existsSync('/opt/google/chrome/google-chrome');
-        
-        if (!chromeExists) {
+        if (!chromeExists()) {
             throw new Error("Chromeがインストールされていません。通常のHTTPリクエストにフォールバックします。");
         }
 
-        await writeLog('info', 'getScrapingWithSelenium', `ChromeDriverパスを設定: ${driverPath}`, null, null);
-        
-        // ChromeDriverパスを環境変数として設定（Selenium 4.xでの推奨方法）
-        process.env.SELENIUM_CHROME_DRIVER = driverPath;
-        process.env.PATH = `${path.dirname(driverPath)}:${process.env.PATH}`;
+        await writeLog('info', 'getScrapingWithSelenium', 'Selenium ManagerでChromeDriverを解決します', null, null);
+        delete process.env.SELENIUM_CHROME_DRIVER;
 
         // Chromeオプションを設定
         const options = new chrome.Options();
@@ -398,18 +304,15 @@ async function getScrapingWithSelenium(url) {
         // 不要な要素を非表示にする
         const unwantedSelectors = [
             'script', 'style', 'iframe', 'noscript', 'header', 'footer', 'nav',
-            '[class*="ad"]', '[class*="Ad"]', '[class*="AD"]',
-            '[id*="ad"]', '[id*="Ad"]', '[id*="AD"]',
-            '[class*="donate"]', '[class*="Donate"]',
-            '[class*="banner"]', '[class*="Banner"]',
-            '[class*="popup"]', '[class*="Popup"]',
-            '[class*="cookie"]', '[class*="Cookie"]',
-            '[class*="sidebar"]', '[class*="Sidebar"]',
-            '.modal', '#modal', '[class*="modal"]', '[id*="modal"]',
-            '[class*="menu"]', '[class*="Menu"]',
-            '[class*="comment"]', '[class*="Comment"]',
-            '[class*="share"]', '[class*="Share"]',
-            '[class*="social"]', '[class*="Social"]'
+            '.ad', '.ads', '.ads-banner', '.ad-banner', '.ad-container', '.ad-slot',
+            '.advertisement', '.advert', '.sponsor', '.sponsored', '.sponsor-link',
+            '.banner-ad', '.promo-banner', '.popup-ad', '.popup-banner', '.cookie-banner',
+            '.sidebar-ad', '.ad-widget', '.ad-wrapper', '.adbox', '.adunit',
+            '.modal', '#modal', '.modal-overlay', '.popup', '#popup', '.cookie-consent',
+            '[class~="ad"]', '[class~="ads"]', '[class^="ad-"]', '[class$="-ad"]',
+            '[class*=" ad-"]', '[class*="-ad "]',
+            '[id^="ad-"]', '[id$="-ad"]', '#ad', '#ads',
+            '[data-ad]', '[data-advertisement]'
         ];
         
         // JavaScriptを実行して不要な要素を非表示にする
@@ -442,12 +345,51 @@ async function getScrapingWithSelenium(url) {
                 if (elements.length > 0) {
                     // 最初に見つかったセレクタのテキストを取得
                     mainContent = await elements[0].getText();
-                    await writeLog('info', 'getScrapingWithSelenium', `セレクタ「${selector}」からコンテンツを抽出しました`, null, null);
-                    break;
+                    
+                    await writeLog('info', 'getScrapingWithSelenium', `セレクタ「${selector}」からコンテンツを抽出しました:${mainContent}`, null, null);
+                    if (mainContent && mainContent.trim().length > 0) {
+                        break;
+                    }
                 }
             } catch (e) {
                 // セレクタが見つからない場合は次へ
                 continue;
+            }
+        }
+
+        // CSSセレクタで取得できない場合は段落単位で広く探索
+        if (!mainContent || mainContent.trim().length === 0) {
+            try {
+                const paragraphs = await driver.executeScript(`
+                    const bucket = [];
+                    const seen = new Set();
+                    const selectors = [
+                        'main article p',
+                        'main section p',
+                        'article section p',
+                        'main p',
+                        'article p',
+                        'section p',
+                        'div[role="main"] p',
+                        'body p'
+                    ];
+                    selectors.forEach(selector => {
+                        document.querySelectorAll(selector).forEach(el => {
+                            const text = (el.innerText || '').trim();
+                            if (text.length < 20) return;
+                            if (seen.has(text)) return;
+                            seen.add(text);
+                            bucket.push(text);
+                        });
+                    });
+                    return bucket.slice(0, 60);
+                `);
+                if (Array.isArray(paragraphs) && paragraphs.length > 0) {
+                    mainContent = paragraphs.join('\n').trim();
+                    await writeLog('info', 'getScrapingWithSelenium', '段落フォールバックからコンテンツを抽出しました', null, null);
+                }
+            } catch (fallbackError) {
+                await writeLog('warn', 'getScrapingWithSelenium', `段落フォールバック取得に失敗: ${fallbackError.message}`, null, null);
             }
         }
         
@@ -455,7 +397,7 @@ async function getScrapingWithSelenium(url) {
         if (!mainContent) {
             const bodyElement = await driver.findElement(By.tagName('body'));
             mainContent = await bodyElement.getText();
-            await writeLog('info', 'getScrapingWithSelenium', 'bodyからコンテンツを抽出しました', null, null);
+            await writeLog('info', 'getScrapingWithSelenium', `bodyからコンテンツを抽出しました:${mainContent}`, null, null);
         }
         
         // 不要なコンテンツをフィルタリング
