@@ -1,3 +1,4 @@
+import { write } from 'fs';
 import Parser from 'rss-parser';
 
 const parser = new Parser();
@@ -56,6 +57,15 @@ export async function getGameSparkFeed() {
         return [];
     }
 }
+
+export async function getMultiFeed_v2(url) {
+    //console.log('getMultiFeed_v2 called with URL:', url);
+    const items = await getMultiFeedFunc(url);
+    
+    return items;
+}
+
+
 
 export async function getMultiFeedFunc(parseURL) {
     try {

@@ -24,6 +24,19 @@ async function resetHeatCounter() {
         await updateMultiKVoperation('protection', '0', 'chat_gpt_heat');
         const info_message2 = ('chat_gpt_heatカウンターを0にリセットしました');
         await writeLog('info', 'resetHeatCounter', info_message2, null, null);
+        await updateMultiKVoperation('protection', '0', 'renote_heat');
+        const info_message3 = ('renote_heatカウンターを0にリセットしました');
+        await writeLog('info', 'resetHeatCounter', info_message3, null, null);
+        await updateMultiKVoperation('protection', '0', 'air_reply_heat');
+        const info_message4 = ('air_reply_heatカウンターを0にリセットしました');
+        await writeLog('info', 'resetHeatCounter', info_message4, null, null);
+        await updateMultiKVoperation('protection', '0', 'environmental_heat');
+        const info_message5 = ('environmental_heatカウンターを0にリセットしました');
+        await writeLog('info', 'resetHeatCounter', info_message5, null, null);
+        await updateMultiKVoperation('protection', '0', 'earthquake_heat');
+        const info_message6 = ('earthquake_heatカウンターを0にリセットしました');
+        await writeLog('info', 'resetHeatCounter', info_message6, null, null);
+
     }
     catch (error) {
         const error_message = (`heatカウンターのリセット中にエラーが発生: ${error.message}`);

@@ -1,53 +1,188 @@
 import os
-from dotenv import load_dotenv
-from text_processor import TextProcessor
-from create_logs import LogManager
-from datetime import datetime
-import json
-from flask import Flask, jsonify, send_file, current_app
 import tempfile
+from dotenv import load_dotenv
+from flask import Flask, jsonify, send_file, Response, after_this_request
+
+from text_processor import TextProcessor
+from env_plot import EnvPlot
+from create_logs import LogManager
 
 app = Flask(__name__)
 
-# グローバル変数の定義
 processor = None
 log_manager = None
+env_plotter = None
+
 
 def get_db_params():
     load_dotenv()
+    host = os.getenv('POSTGRES_HOST') or 'db-afm'
     return {
         'dbname': os.getenv('POSTGRES_DB'),
         'user': os.getenv('POSTGRES_USER'),
         'password': os.getenv('POSTGRES_PASSWORD'),
-        'host': os.getenv('POSTGRES_HOST'),
-        'host': 'db-afm',  # コンテナ名を直接指定
-
+        'host': host,
         'port': os.getenv('POSTGRES_PORT')
     }
 
-# アプリケーション初期化時に実行される関数
+
 def init_app():
-    with app.app_context():
-        db_params = get_db_params()
-        global processor, log_manager
-        processor = TextProcessor(db_params)
-        log_manager = LogManager(db_params)
-        
+    global processor, log_manager, env_plotter
+    db_params = get_db_params()
+    processor = TextProcessor(db_params)
+    env_plotter = EnvPlot(db_params)
+    log_manager = LogManager(db_params)
+
+    log_manager.write_log(
+        'INFO',
+        'system',
+        'Application initialized',
+        metadata={'host': '0.0.0.0', 'port': 3000}
+    )
+
+
+try:
+    init_app()
+except Exception as exc:
+    print(f"Initialization error: {exc}")
+
+
+@app.route('/generate/pressure_plot', methods=['GET'])
+def generate_pressure_plot():
+    if env_plotter is None or log_manager is None:
+        return jsonify({'error': '初期化エラーが発生しました'}), 500
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    temp_file.close()
+    temp_path = temp_file.name
+
+    try:
+        result = env_plotter.create_plot('pressure', '気圧 (hPa)', temp_path)
+        if result is None:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            return jsonify({'error': '直近24時間の気圧データが見つかりませんでした'}), 404
+
         log_manager.write_log(
             'INFO',
-            'system',
-            'Application initialized',
-            metadata={'host': '0.0.0.0', 'port': 3000}
+            'generate_pressure_plot',
+            '気圧グラフの生成に成功しました',
+            metadata={'temp_file': temp_path}
         )
 
-# アプリケーション起動前に初期化を実行
-init_app()
+        @after_this_request
+        def cleanup(response):
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            return response
+
+        return send_file(
+            temp_path,
+            mimetype='image/png',
+            as_attachment=True,
+            download_name='pressure_plot.png'
+        )
+
+    except Exception as exc:
+        log_manager.write_log(
+            'ERROR',
+            'generate_pressure_plot',
+            str(exc),
+            metadata={'error_type': type(exc).__name__}
+        )
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+        return jsonify({'error': 'サーバーエラーが発生しました'}), 500
+
+
+@app.route('/generate/temperature_plot', methods=['GET'])
+def generate_temperature_plot():
+    if env_plotter is None or log_manager is None:
+        return jsonify({'error': '初期化エラーが発生しました'}), 500
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    temp_file.close()
+    temp_path = temp_file.name
+
+    try:
+        result = env_plotter.create_plot('temperature', '気温 (°C)', temp_path)
+        if result is None:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            return jsonify({'error': '直近24時間の気温データが見つかりませんでした'}), 404
+
+        log_manager.write_log(
+            'INFO',
+            'generate_temperature_plot',
+            '気温グラフの生成に成功しました',
+            metadata={'temp_file': temp_path}
+        )
+
+        @after_this_request
+        def cleanup(response):
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            return response
+
+        return send_file(
+            temp_path,
+            mimetype='image/png',
+            as_attachment=True,
+            download_name='temperature_plot.png'
+        )
+
+    except Exception as exc:
+        log_manager.write_log(
+            'ERROR',
+            'generate_temperature_plot',
+            str(exc),
+            metadata={'error_type': type(exc).__name__}
+        )
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+        return jsonify({'error': 'サーバーエラーが発生しました'}), 500
+
+
+@app.route('/generate/pressure_alert', methods=['GET'])
+def generate_pressure_alert():
+    if env_plotter is None or log_manager is None:
+        return jsonify({'error': '初期化エラーが発生しました'}), 500
+
+    try:
+        alert_result = env_plotter.evaluate_pressure_alert()
+        if alert_result is None:
+            return jsonify({'error': '直近24時間の気圧データが見つかりませんでした'}), 404
+
+        alert_type = alert_result.get('type')
+        if alert_type == 'none':
+            return ('', 204)
+
+        message = alert_result.get('message', '')
+        log_manager.write_log(
+            'INFO',
+            'generate_pressure_alert',
+            '気圧アラート判定を返却しました',
+            metadata={'alert_type': alert_type}
+        )
+        return Response(message, status=200, mimetype='text/plain; charset=utf-8')
+
+    except Exception as exc:
+        log_manager.write_log(
+            'ERROR',
+            'generate_pressure_alert',
+            str(exc),
+            metadata={'error_type': type(exc).__name__}
+        )
+        return jsonify({'error': 'サーバーエラーが発生しました'}), 500
+
 
 @app.route('/generate/text', methods=['GET'])
 def generate_text():
+    if processor is None or log_manager is None:
+        return jsonify({'error': '初期化エラーが発生しました'}), 500
+
     try:
         texts = processor.get_texts_from_db()
-        texts_wordcloud = processor.get_texts_from_db_wordcloud()
         if not texts:
             log_manager.write_log(
                 'WARNING',
@@ -69,7 +204,6 @@ def generate_text():
             return jsonify({'text': generated_text})
 
         except ValueError as ve:
-            # データ不足などの検証エラー
             log_manager.write_log(
                 'WARNING',
                 'text_generator',
@@ -79,7 +213,6 @@ def generate_text():
             return jsonify({'error': str(ve)}), 400
 
         except RuntimeError as re:
-            # 生成失敗エラー
             log_manager.write_log(
                 'ERROR',
                 'text_generator',
@@ -89,7 +222,6 @@ def generate_text():
             return jsonify({'error': str(re)}), 500
 
     except Exception as e:
-        # 予期しないエラー
         log_manager.write_log(
             'ERROR',
             'text_generator',
@@ -98,8 +230,13 @@ def generate_text():
         )
         return jsonify({'error': 'サーバーエラーが発生しました'}), 500
 
+
 @app.route('/generate/wordcloud', methods=['GET'])
 def generate_wordcloud():
+    if processor is None or log_manager is None:
+        return jsonify({'error': '初期化エラーが発生しました'}), 500
+
+    temp_path = None
     try:
         texts_wordcloud = processor.get_texts_from_db_wordcloud()
         if not texts_wordcloud:
@@ -110,12 +247,11 @@ def generate_wordcloud():
             )
             return jsonify({'error': 'テキストが見つかりませんでした'}), 404
 
-        # 一時ファイルのみ生成
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-        temp_filename = temp_file.name
+        temp_path = temp_file.name
+        temp_file.close()
         
-        # ワードクラウドを生成
-        wordcloud = processor.generate_wordcloud(texts_wordcloud, temp_filename)
+        wordcloud = processor.generate_wordcloud(texts_wordcloud, temp_path)
         if wordcloud is None:
             return jsonify({'error': 'ワードクラウドの生成に失敗しました'}), 500
 
@@ -124,13 +260,18 @@ def generate_wordcloud():
             'generate_wordcloud',
             'ワードクラウドの生成に成功しました',
             metadata={
-                'temp_file': temp_filename
+                'temp_file': temp_path
             }
         )
 
-        # 画像を直接返却
+        @after_this_request
+        def cleanup(response):
+            if temp_path and os.path.exists(temp_path):
+                os.unlink(temp_path)
+            return response
+
         return send_file(
-            temp_filename,
+            temp_path,
             mimetype='image/png',
             as_attachment=True,
             download_name='wordcloud.png'
@@ -143,38 +284,17 @@ def generate_wordcloud():
             str(e),
             metadata={'error_type': type(e).__name__}
         )
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
         return jsonify({'error': 'サーバーエラーが発生しました'}), 500
-    finally:
-        # 一時ファイルを削除
-        if 'temp_filename' in locals():
-            os.unlink(temp_filename)
+
 
 if __name__ == "__main__":
-    try:
-        db_params = get_db_params()
-        processor = TextProcessor(db_params)
-        log_manager = LogManager(db_params)
-        
-        # 起動時のログ記録
+    if log_manager:
         log_manager.write_log(
             'INFO',
             'system',
             'Flask application started',
             metadata={'host': '0.0.0.0', 'port': 3000}
         )
-        app.run(host='0.0.0.0', port=3000)
-
-        generated_text = processor.generate_markov_text(texts)
-        print(generated_text)
-
-    except Exception as e:
-        print(f"Initialization error: {str(e)}")
-        if log_manager:
-            log_manager.write_log(
-                'ERROR',
-                'system',
-                'Application initialization failed',
-                metadata={'error': str(e)}
-            )
-        exit(1)  # exit() をif文のブロック内に移動
-
+    app.run(host='0.0.0.0', port=3000)

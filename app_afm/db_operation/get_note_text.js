@@ -26,7 +26,7 @@ async function getRandomDinnerText() {
 
         const query = 'SELECT value FROM note_text WHERE key = $1';
         const result = await client.query(query, ['dinner_text']);
-
+        console.log(`DBからのdinner_text取得: ${JSON.stringify(result.rows)}`);
         if (result.rows.length === 0 || !result.rows[0].value) {
             console.error('dinner_textが見つかりません');
 
